@@ -50,7 +50,7 @@ export default function LevelPicker({
         aria-expanded={open}
         aria-label={`Esfuerzo de razonamiento: ${LEVEL_INFO[value].label}`}
         className={`flex h-9 items-center gap-0.5 rounded-full px-2.5 text-sm font-medium transition disabled:opacity-50 ${
-          open ? "bg-slate-100 text-slate-700" : "text-slate-500 hover:bg-slate-50 hover:text-slate-700"
+          open ? "bg-white/10 text-white" : "text-slate-400 hover:bg-white/10 hover:text-white"
         }`}
       >
         {open ? "Razonamiento" : LEVEL_INFO[value].label}
@@ -63,13 +63,13 @@ export default function LevelPicker({
         <div
           role="dialog"
           aria-label="Esfuerzo de razonamiento"
-          className="absolute bottom-full right-0 z-30 mb-2 w-[min(17rem,100%)] rounded-2xl border border-slate-200 bg-white p-4 pb-3 shadow-xl"
+          className="absolute bottom-full right-0 z-30 mb-2 w-[min(17rem,100%)] rounded-2xl border border-white/10 bg-[#1b1b1e] p-4 pb-3 shadow-2xl"
         >
-          <p className="text-center text-[15px] font-semibold text-[#0b1840]">{LEVEL_INFO[value].label}</p>
+          <p className="text-center text-[15px] font-semibold text-white">{LEVEL_INFO[value].label}</p>
 
           {/* Deslizador de 3 posiciones. Es un <input type="range"> para que funcione con teclado y lectores de pantalla. */}
           <div className="relative mt-3 h-9">
-            <div className="absolute inset-x-0 top-1/2 h-9 -translate-y-1/2 rounded-full bg-slate-100" />
+            <div className="absolute inset-x-0 top-1/2 h-9 -translate-y-1/2 rounded-full bg-white/10" />
             <div
               className="absolute left-0 top-1/2 h-9 -translate-y-1/2 rounded-full bg-[#1450d8] transition-[width]"
               style={{ width: `calc(2.25rem + (100% - 2.25rem) * ${percent / 100})` }}
@@ -77,12 +77,12 @@ export default function LevelPicker({
             {levels.map((l, i) => (
               <span
                 key={l}
-                className={`pointer-events-none absolute top-1/2 h-1 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full ${i <= index ? "bg-white/70" : "bg-slate-400"}`}
+                className={`pointer-events-none absolute top-1/2 h-1 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full ${i <= index ? "bg-white/70" : "bg-slate-500"}`}
                 style={{ left: `calc(1.125rem + (100% - 2.25rem) * ${levels.length > 1 ? i / (levels.length - 1) : 0})` }}
               />
             ))}
             <span
-              className="pointer-events-none absolute top-1/2 h-8 w-8 -translate-x-1/2 -translate-y-1/2 rounded-full border border-slate-200 bg-white shadow-md transition-[left]"
+              className="pointer-events-none absolute top-1/2 h-8 w-8 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow-md transition-[left]"
               style={{ left: `calc(1.125rem + (100% - 2.25rem) * ${percent / 100})` }}
             />
             <input
@@ -97,9 +97,9 @@ export default function LevelPicker({
               className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
             />
           </div>
-          <div className="mt-1.5 flex justify-between px-1 text-[11px] font-medium text-slate-400">
+          <div className="mt-1.5 flex justify-between px-1 text-[11px] font-medium text-slate-500">
             {levels.map((l) => (
-              <button key={l} type="button" title={LEVEL_INFO[l].description} onClick={() => onChange(l)} className={l === value ? "text-[#1450d8]" : "hover:text-slate-600"}>
+              <button key={l} type="button" title={LEVEL_INFO[l].description} onClick={() => onChange(l)} className={l === value ? "text-[#6ea0ff]" : "hover:text-slate-300"}>
                 {LEVEL_INFO[l].label}
               </button>
             ))}
@@ -107,7 +107,7 @@ export default function LevelPicker({
 
           {/* Solo si el modelo actual no cambia de verdad (p. ej. un modelo de OpenAI sin razonamiento). */}
           {noRealReasoning.includes(value) && (
-            <p className="mt-2 text-center text-[11px] text-amber-700">Este modelo no cambia su razonamiento.</p>
+            <p className="mt-2 text-center text-[11px] text-amber-400">Este modelo no cambia su razonamiento.</p>
           )}
         </div>
       )}

@@ -1,5 +1,10 @@
+"use client";
+
 // Lista de lo que hay en el día elegido: hora a la izquierda, barra de color y detalles.
+// Lo propio se puede editar (tocar) o quitar (papelera); lo de Canvas solo se mira.
+import { useState } from "react";
 import { BellIcon } from "@/components/calendar/EntryForm";
+import { TrashIcon } from "@/components/chat/ActionCard";
 import { describeReminder, KIND_INFO, type CalendarItem } from "@/lib/entries";
 
 const LEVEL_LABEL = { completo: "Contexto completo", parcial: "Contexto parcial", solo_titulo: "Solo título" } as const;
@@ -9,11 +14,13 @@ export default function DayAgenda({
   items,
   onAdd,
   onEdit,
+  onDelete,
 }: {
   title: string;
   items: CalendarItem[];
   onAdd: () => void;
   onEdit: (item: CalendarItem) => void;
+  onDelete: (item: CalendarItem) => void;
 }) {
   return (
     <section className="px-4 py-5 sm:px-6">
@@ -36,7 +43,7 @@ export default function DayAgenda({
         <ul className="mt-3 divide-y divide-slate-100 overflow-hidden rounded-2xl border border-slate-200 bg-white">
           {items.map((item) => (
             <li key={item.id}>
-              <AgendaRow item={item} onEdit={onEdit} />
+              <AgendaRow item={item} onEdit={onEdit} onDelete={onDelete} />
             </li>
           ))}
         </ul>
@@ -45,7 +52,16 @@ export default function DayAgenda({
   );
 }
 
-function AgendaRow({ item, onEdit }: { item: CalendarItem; onEdit: (item: CalendarItem) => void }) {
+function AgendaRow({
+  item,
+  onEdit,
+  onDelete,
+}: {
+  item: CalendarItem;
+  onEdit: (item: CalendarItem) => void;
+  onDelete: (item: CalendarItem) => void;
+}) {
+  const [confirming, setConfirming] = useState(false);
   const info = KIND_INFO[item.kind];
   const body = (
     <div className="flex gap-3 px-3 py-3 text-left">
@@ -73,19 +89,40 @@ function AgendaRow({ item, onEdit }: { item: CalendarItem; onEdit: (item: Calend
           <p className="mt-1.5 line-clamp-3 whitespace-pre-wrap text-sm text-slate-600">{item.description}</p>
         )}
       </div>
-      {item.source === "usuario" && (
-        <svg viewBox="0 0 24 24" className="mt-1 h-4 w-4 shrink-0 text-slate-300" fill="none" stroke="currentColor" strokeWidth={2.5} aria-hidden>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M9 6l6 6-6 6" />
-        </svg>
-      )}
     </div>
   );
 
   if (item.source === "usuario") {
     return (
-      <button onClick={() => onEdit(item)} className="block w-full active:bg-slate-50" aria-label={`Editar ${item.title}`}>
-        {body}
-      </button>
+      <div className="flex items-stretch">
+        <button onClick={() => onEdit(item)} className="block min-w-0 flex-1 active:bg-slate-50" aria-label={`Editar ${item.title}`}>
+          {body}
+        </button>
+        {confirming ? (
+          <div className="flex shrink-0 items-center gap-1 pr-2">
+            <button onClick={() => setConfirming(false)} className="min-h-10 rounded-full px-2.5 text-xs font-semibold text-slate-500 active:bg-slate-100">
+              No
+            </button>
+            <button
+              onClick={() => {
+                setConfirming(false);
+                onDelete(item);
+              }}
+              className="min-h-10 rounded-full bg-[#e5262b] px-3 text-xs font-bold text-white"
+            >
+              Quitar
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => setConfirming(true)}
+            aria-label={`Quitar ${item.title} del calendario`}
+            className="flex w-11 shrink-0 items-start justify-center pt-3 text-slate-300 hover:text-[#e5262b] active:bg-slate-50"
+          >
+            <TrashIcon className="h-[18px] w-[18px]" />
+          </button>
+        )}
+      </div>
     );
   }
   return (

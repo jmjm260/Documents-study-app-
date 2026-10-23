@@ -2,25 +2,45 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import ActionCard from "@/components/chat/ActionCard";
+import ChatsSheet from "@/components/chat/ChatsSheet";
+import LevelPicker from "@/components/chat/LevelPicker";
+import PhotoViewer from "@/components/chat/PhotoViewer";
 import SpeechBubble from "@/components/chat/SpeechBubble";
 import TocoritoFigure from "@/components/chat/TocoritoFigure";
 import { useSpeech } from "@/components/chat/useSpeech";
 import RichText from "@/components/RichText";
-import { dayKey } from "@/lib/calendar";
-import LevelPicker from "@/components/chat/LevelPicker";
 import { DEFAULT_REASONING_LEVEL, REASONING_LEVELS, type ReasoningLevel } from "@/lib/ai/reasoning";
 import type { ChatStatus } from "@/lib/ai/types";
-import PhotoViewer from "@/components/chat/PhotoViewer";
+import { dayKey } from "@/lib/calendar";
 import { MAX_CHARS, MAX_IMAGES, type ChatMessage } from "@/lib/chat";
-import { compressImage } from "@/lib/images";
-import { loadPrefs, savePrefs } from "@/lib/prefs";
+import { actionNote, MAX_CONTEXT_ITEMS, removalNote, type ChatContext } from "@/lib/chat-actions";
 import { extractCoffee } from "@/lib/coffee";
+import {
+  loadConversations,
+  loadCurrentId,
+  newConversation,
+  saveConversations,
+  saveCurrentId,
+  upsert,
+  type Conversation,
+  type UiMessage,
+} from "@/lib/conversations";
+import {
+  addEntries,
+  KIND_INFO,
+  loadCanvasCache,
+  loadEntries,
+  removeEntry,
+  restoreEntry,
+  toCalendarItems,
+  type Entry,
+  type EntryDraft,
+} from "@/lib/entries";
+import { compressImage, THUMB_SIDE } from "@/lib/images";
+import { loadPrefs, savePrefs } from "@/lib/prefs";
 import { visibleReplies } from "@/lib/stream-text";
-import { actionNote, MAX_CONTEXT_ITEMS, type ChatContext } from "@/lib/chat-actions";
-import { addEntries, KIND_INFO, loadCanvasCache, loadEntries, removeEntry, toCalendarItems, type Entry, type EntryDraft } from "@/lib/entries";
 
-// En la pantalla, además de mensajes, mostramos tarjetas de lo que Tocorito anotó.
-type UiMessage = ChatMessage | { role: "action"; entry: Entry; undone: boolean };
+type Card = { change: "added" | "removed"; entry: Entry };
 
 /** Resumen del calendario (próximos 60 días) que se manda a Tocorito con cada mensaje. */
 function calendarContext(): ChatContext {
@@ -31,7 +51,15 @@ function calendarContext(): ChatContext {
     .filter((i) => i.day >= today && i.day <= limit)
     .sort((a, b) => (a.day + (a.time ?? "")).localeCompare(b.day + (b.time ?? "")))
     .slice(0, MAX_CONTEXT_ITEMS)
-    .map((i) => ({ date: i.day, time: i.time, kind: KIND_INFO[i.kind].label.toLowerCase(), title: i.title, course: i.course }));
+    .map((i) => ({
+      // Solo lo propio lleva id: es lo que Tocorito puede quitar.
+      ...(i.entry ? { id: i.entry.id } : {}),
+      date: i.day,
+      time: i.time,
+      kind: KIND_INFO[i.kind].label.toLowerCase(),
+      title: i.title,
+      course: i.course,
+    }));
   const pad = (n: number) => String(n).padStart(2, "0");
   // Con segundos, para que Tocorito pueda poner alarmas como "dentro de 15 segundos".
   const clock = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
@@ -40,9 +68,14 @@ function calendarContext(): ChatContext {
 
 /** Lo que se manda a la IA: las tarjetas se convierten en una nota para que Tocorito las recuerde. */
 function toHistory(messages: UiMessage[]): ChatMessage[] {
-  const history = messages.flatMap((m): ChatMessage[] =>
-    m.role === "action" ? (m.undone ? [] : [{ role: "assistant", content: actionNote(m.entry) }]) : [m]
-  );
+  const history = messages.flatMap((m): ChatMessage[] => {
+    if (m.role === "action") {
+      const happened = !m.undone;
+      if (!happened) return [];
+      return [{ role: "assistant", content: m.change === "added" ? actionNote(m.entry) : removalNote(m.entry) }];
+    }
+    return [{ role: m.role, content: m.content, ...(m.images?.length ? { images: m.images } : {}) }];
+  });
   // Las fotos solo viajan con el último mensaje; en los anteriores dejamos una marca.
   return history.map((m, i) =>
     m.images?.length && i !== history.length - 1
@@ -83,10 +116,15 @@ async function* readEvents(res: Response): AsyncGenerator<Record<string, unknown
 }
 
 export default function Chat() {
+  // Chat abierto (se guarda en el dispositivo; así no se pierde al cambiar de pestaña).
+  const [conv, setConv] = useState<Pick<Conversation, "id" | "createdAt">>(() => newConversation());
   const [messages, setMessages] = useState<UiMessage[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  const [chatList, setChatList] = useState<Conversation[] | null>(null);
+
   const [input, setInput] = useState("");
-  // Fotos preparadas para el próximo mensaje (ya comprimidas, como data URL).
-  const [photos, setPhotos] = useState<string[]>([]);
+  // Fotos preparadas para el próximo mensaje: la grande para la IA y una miniatura para el historial.
+  const [photos, setPhotos] = useState<{ full: string; thumb: string }[]>([]);
   const [viewing, setViewing] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   // Animación de Tocorito tomando café (sustituye a escribir "*sorbo largo*" en el texto).
@@ -100,7 +138,6 @@ export default function Chat() {
   const [thinking, setThinking] = useState(false);
   const [status, setStatus] = useState<ChatStatus>("preparing");
   const [error, setError] = useState<string | null>(null);
-  // Nivel de esta conversación (si no se cambia, el predeterminado del usuario).
   const [defaultLevel, setDefaultLevel] = useState<ReasoningLevel>(DEFAULT_REASONING_LEVEL);
   const [level, setLevel] = useState<ReasoningLevel>(DEFAULT_REASONING_LEVEL);
   const [levels, setLevels] = useState<{ level: ReasoningLevel; realReasoning: boolean }[]>(
@@ -110,16 +147,35 @@ export default function Chat() {
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   // Tocorito "habla": cada mensaje se escribe en el globo y al terminar pasa al chat.
-  const pendingCards = useRef<Entry[]>([]);
+  const pendingCards = useRef<Card[]>([]);
   const speech = useSpeech({
     onCommit: useCallback((text: string) => setMessages((m) => [...m, { role: "assistant", content: text }]), []),
     onFinish: useCallback(() => {
       const cards = pendingCards.current;
       pendingCards.current = [];
-      if (cards.length) setMessages((m) => [...m, ...cards.map((entry) => ({ role: "action" as const, entry, undone: false }))]);
+      if (cards.length) setMessages((m) => [...m, ...cards.map((c) => ({ role: "action" as const, ...c, undone: false }))]);
     }, []),
   });
   const busy = thinking || speech.active;
+
+  // Al abrir: el último chat que tenías abierto.
+  useEffect(() => {
+    const id = loadCurrentId();
+    const found = id ? loadConversations().find((c) => c.id === id) : undefined;
+    if (found) {
+      setConv({ id: found.id, createdAt: found.createdAt });
+      setMessages(found.messages);
+    }
+    setLoaded(true);
+  }, []);
+
+  // Guardar cada cambio del chat.
+  useEffect(() => {
+    if (!loaded) return;
+    const list = upsert(loadConversations(), { ...conv, title: "", updatedAt: Date.now(), messages });
+    saveConversations(list);
+    saveCurrentId(messages.length ? conv.id : null);
+  }, [messages, conv, loaded]);
 
   // El chat deja sitio debajo para el globo mientras Tocorito habla.
   const bubbleRef = useRef<HTMLButtonElement>(null);
@@ -162,7 +218,9 @@ export default function Chat() {
     const room = MAX_IMAGES - photos.length;
     if (images.length > room) setError(`Puedes mandar hasta ${MAX_IMAGES} fotos a la vez.`);
     try {
-      const ready = await Promise.all(images.slice(0, Math.max(room, 0)).map(compressImage));
+      const ready = await Promise.all(
+        images.slice(0, Math.max(room, 0)).map(async (f) => ({ full: await compressImage(f), thumb: await compressImage(f, THUMB_SIDE, 0.7) }))
+      );
       setPhotos((p) => [...p, ...ready].slice(0, MAX_IMAGES));
     } catch (err) {
       setError(err instanceof Error ? err.message : "No pude abrir esa foto.");
@@ -172,7 +230,9 @@ export default function Chat() {
   async function send(text: string) {
     const content = text.trim();
     if ((!content && photos.length === 0) || busy) return;
-    const userMsg: ChatMessage = photos.length ? { role: "user", content, images: photos } : { role: "user", content };
+    const userMsg: UiMessage = photos.length
+      ? { role: "user", content, images: photos.map((p) => p.full), thumbs: photos.map((p) => p.thumb) }
+      : { role: "user", content };
     const next: UiMessage[] = [...messages, userMsg];
     setMessages(next);
     setInput("");
@@ -205,10 +265,17 @@ export default function Chat() {
         } else if (ev.type === "error") {
           throw new Error((ev.error as string) ?? "Tocorito no pudo responder.");
         } else if (ev.type === "done") {
-          // Versión final limpia (sin bloques de calendario). Las tarjetas de lo que anotó salen
-          // cuando Tocorito termina de hablar.
+          // Lo que Tocorito puso o quitó del calendario: se aplica ya y la tarjeta sale al final.
           const actions = (ev.actions as EntryDraft[]) ?? [];
-          pendingCards.current = actions.length ? addEntries(actions) : [];
+          const removals = (ev.removals as string[]) ?? [];
+          const before = loadEntries();
+          const removed = before.filter((e) => removals.includes(e.id));
+          removed.forEach((e) => removeEntry(e.id));
+          const added = actions.length ? addEntries(actions) : [];
+          pendingCards.current = [
+            ...removed.map((entry) => ({ change: "removed" as const, entry })),
+            ...added.map((entry) => ({ change: "added" as const, entry })),
+          ];
           if (ev.sip && !sipped) sip();
           speech.update(ev.replies as string[], true);
         }
@@ -229,120 +296,151 @@ export default function Chat() {
     savePrefs({ defaultReasoningLevel: next });
   }
 
-  function undo(id: string) {
-    removeEntry(id);
-    setMessages((list) => list.map((m) => (m.role === "action" && m.entry.id === id ? { ...m, undone: true } : m)));
+  function undo(index: number) {
+    const m = messages[index];
+    if (m?.role !== "action") return;
+    if (m.change === "added") removeEntry(m.entry.id);
+    else restoreEntry(m.entry);
+    setMessages((list) => list.map((x, i) => (i === index ? { ...m, undone: true } : x)));
+  }
+
+  function openChat(id: string) {
+    const found = loadConversations().find((c) => c.id === id);
+    if (!found) return;
+    setConv({ id: found.id, createdAt: found.createdAt });
+    setMessages(found.messages);
+    setError(null);
+    setChatList(null);
   }
 
   function newChat() {
     if (busy) return;
+    setConv(newConversation());
     setMessages([]);
     setError(null);
     setInput("");
     setPhotos([]);
     setLevel(defaultLevel);
+    setChatList(null);
+  }
+
+  function deleteChat(id: string) {
+    const list = loadConversations().filter((c) => c.id !== id);
+    saveConversations(list);
+    setChatList(list);
+    if (id === conv.id) {
+      setConv(newConversation());
+      setMessages([]);
+    }
   }
 
   const empty = messages.length === 0 && !busy;
-  const shown = messages;
 
   return (
-    <div className="flex h-full flex-col bg-white font-sans text-[#0b1840]">
+    <div className="flex h-full flex-col bg-black font-sans text-white">
       <div className="flex h-1 shrink-0">
         <div className="flex-1 bg-[#1450d8]" />
         <div className="flex-1 bg-white" />
         <div className="flex-1 bg-[#e5262b]" />
       </div>
 
-      <header className="shrink-0 border-b border-slate-200 bg-white px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] sm:px-6">
-        <div className="mx-auto flex max-w-3xl items-center gap-3">
+      <header className="shrink-0 border-b border-white/10 bg-black px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] sm:px-6">
+        <div className="mx-auto flex max-w-3xl items-center gap-2">
           <div className="min-w-0 flex-1">
             <h1 className="text-[17px] font-extrabold leading-tight tracking-tight">Tocorito</h1>
-            <p className="flex items-center gap-1.5 text-xs text-slate-500">
+            <p className="flex items-center gap-1.5 text-xs text-slate-400">
               <span className={`h-1.5 w-1.5 rounded-full ${busy ? "animate-pulse bg-[#f59e0b]" : "bg-emerald-500"}`} />
               {thinking && !speech.shown ? STATUS_LABEL[status] : busy ? "Escribiendo…" : "Tu tutor de estudio"}
             </p>
           </div>
-          {messages.length > 0 && (
-            <button
-              onClick={newChat}
-              disabled={busy}
-              aria-label="Nueva conversación"
-              className="flex min-h-10 items-center gap-1.5 rounded-full border border-slate-200 px-3 text-xs font-semibold text-slate-600 active:bg-slate-50 disabled:opacity-40"
-            >
-              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2.2} aria-hidden>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4 12.5-12.5z" />
-              </svg>
-              Nueva
-            </button>
-          )}
+          <button
+            onClick={() => setChatList(loadConversations())}
+            disabled={busy}
+            aria-label="Tus chats"
+            className="flex min-h-10 items-center gap-1.5 rounded-full border border-white/15 px-3 text-xs font-semibold text-slate-200 active:bg-white/10 disabled:opacity-40"
+          >
+            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2.2} aria-hidden>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h10" />
+            </svg>
+            Chats
+          </button>
+          <button
+            onClick={newChat}
+            disabled={busy || messages.length === 0}
+            aria-label="Nuevo chat"
+            className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 text-slate-200 active:bg-white/10 disabled:opacity-40"
+          >
+            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2.2} aria-hidden>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4 12.5-12.5z" />
+            </svg>
+          </button>
         </div>
       </header>
 
       <div className="relative min-h-0 flex-1">
-      <main className="h-full overflow-y-auto bg-black [color-scheme:dark]">
-        <div
-          className="mx-auto flex min-h-full max-w-3xl flex-col px-4 py-5 sm:px-6"
-          style={empty ? undefined : { paddingBottom: (speech.active ? bubbleHeight + 24 : 0) + 112 }}
-        >
-          {empty ? (
-            <Welcome onPick={send} sipping={sipping} />
-          ) : (
-            <div className="flex flex-col">
-              {shown.map((m, i) => {
-                if (m.role === "action") {
-                  return <ActionCard key={m.entry.id} entry={m.entry} undone={m.undone} onUndo={() => undo(m.entry.id)} />;
-                }
-                const prev = shown[i - 1];
-                const nextMsg = shown[i + 1];
-                const firstOfGroup = prev?.role !== m.role;
-                const lastOfGroup = nextMsg?.role !== m.role;
-                return <Bubble key={i} message={m} firstOfGroup={firstOfGroup} lastOfGroup={lastOfGroup} onOpenPhoto={setViewing} />;
-              })}
-              {error && (
-                <div className="mt-4 flex items-start gap-2 rounded-xl border border-red-400/40 bg-red-500/10 px-3 py-2.5 text-sm text-red-300">
-                  <span aria-hidden>⚠️</span>
-                  <span>{error}</span>
-                </div>
-              )}
-            </div>
-          )}
-          <div ref={bottomRef} />
-        </div>
-      </main>
-      {/* Tocorito vive en la esquina; toma café cuando "habla" de café. */}
-      {!empty && speech.active && (
-        <div className="pointer-events-none absolute bottom-[3.25rem] left-4 right-[3.75rem] flex justify-end sm:bottom-[4.5rem] sm:right-[6.5rem]">
-          {/* Mientras no llega texto: "Pensando…" (nunca el razonamiento interno). */}
-          <SpeechBubble
-            ref={bubbleRef}
-            text={speech.shown}
-            waitingLabel={thinking && !speech.shown ? STATUS_LABEL[status] : null}
-            onSkip={speech.skip}
-          />
-        </div>
-      )}
-      {!empty && (
-        <div className="pointer-events-none absolute bottom-1 right-1 sm:right-4">
-          {/* Más pequeño en el móvil para que quepa al lado de las burbujas */}
-          <TocoritoFigure height={70} sipping={sipping} className="sm:hidden" />
-          <TocoritoFigure height={96} sipping={sipping} className="hidden sm:block" />
-        </div>
-      )}
+        <main className="h-full overflow-y-auto bg-black [color-scheme:dark]">
+          <div
+            className="mx-auto flex min-h-full max-w-3xl flex-col px-4 py-5 sm:px-6"
+            style={empty ? undefined : { paddingBottom: (speech.active ? bubbleHeight + 24 : 0) + 112 }}
+          >
+            {empty ? (
+              <Welcome onPick={send} sipping={sipping} />
+            ) : (
+              <div className="flex flex-col">
+                {messages.map((m, i) => {
+                  if (m.role === "action") {
+                    return <ActionCard key={`${m.entry.id}-${i}`} entry={m.entry} change={m.change} undone={m.undone} onUndo={() => undo(i)} />;
+                  }
+                  const prev = messages[i - 1];
+                  const nextMsg = messages[i + 1];
+                  const firstOfGroup = prev?.role !== m.role;
+                  const lastOfGroup = nextMsg?.role !== m.role;
+                  return <Bubble key={i} message={m} firstOfGroup={firstOfGroup} lastOfGroup={lastOfGroup} onOpenPhoto={setViewing} />;
+                })}
+                {error && (
+                  <div className="mt-4 flex items-start gap-2 rounded-xl border border-red-400/40 bg-red-500/10 px-3 py-2.5 text-sm text-red-300">
+                    <span aria-hidden>⚠️</span>
+                    <span>{error}</span>
+                  </div>
+                )}
+              </div>
+            )}
+            <div ref={bottomRef} />
+          </div>
+        </main>
+        {!empty && speech.active && (
+          <div className="pointer-events-none absolute bottom-[3.25rem] left-4 right-[3.75rem] flex justify-end sm:bottom-[4.5rem] sm:right-[6.5rem]">
+            {/* Mientras no llega texto: "Pensando…" (nunca el razonamiento interno). */}
+            <SpeechBubble
+              ref={bubbleRef}
+              text={speech.shown}
+              waitingLabel={thinking && !speech.shown ? STATUS_LABEL[status] : null}
+              onSkip={speech.skip}
+            />
+          </div>
+        )}
+        {/* Tocorito vive en la esquina; toma café cuando "habla" de café. */}
+        {!empty && (
+          <div className="pointer-events-none absolute bottom-1 right-1 sm:right-4">
+            {/* Más pequeño en el móvil para que quepa al lado de las burbujas */}
+            <TocoritoFigure height={70} sipping={sipping} className="sm:hidden" />
+            <TocoritoFigure height={96} sipping={sipping} className="hidden sm:block" />
+          </div>
+        )}
       </div>
 
-      <footer className="shrink-0 border-t border-slate-200 bg-white px-3 pb-2 pt-2 sm:px-6">
+      <footer className="shrink-0 border-t border-white/10 bg-black px-3 pb-2 pt-2 sm:px-6">
         {photos.length > 0 && (
           <div className="mx-auto mb-2 flex max-w-3xl gap-2 overflow-x-auto px-1 pt-1.5">
-            {photos.map((src, i) => (
+            {photos.map((p, i) => (
               <div key={i} className="relative shrink-0">
                 {/* eslint-disable-next-line @next/next/no-img-element -- foto local (data URL) */}
-                <img src={src} alt={`Foto ${i + 1}`} className="h-16 w-16 rounded-xl border border-slate-200 object-cover" />
+                <img src={p.thumb} alt={`Foto ${i + 1}`} className="h-16 w-16 rounded-xl border border-white/15 object-cover" />
                 <button
                   type="button"
-                  onClick={() => setPhotos((p) => p.filter((_, j) => j !== i))}
+                  onClick={() => setPhotos((list) => list.filter((_, j) => j !== i))}
                   aria-label={`Quitar foto ${i + 1}`}
-                  className="absolute -right-1.5 -top-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-[#0b1840] text-white shadow"
+                  className="absolute -right-1.5 -top-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-white text-black shadow"
                 >
                   <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={3} aria-hidden>
                     <path strokeLinecap="round" d="M6 6l12 12M18 6L6 18" />
@@ -357,7 +455,7 @@ export default function Chat() {
             e.preventDefault();
             send(input);
           }}
-          className="relative mx-auto flex max-w-3xl items-end gap-1 rounded-[22px] border border-slate-300 bg-white py-1 pl-1 pr-1 shadow-sm focus-within:border-[#1450d8] focus-within:ring-2 focus-within:ring-[#1450d8]/15"
+          className="relative mx-auto flex max-w-3xl items-end gap-1 rounded-[22px] border border-white/15 bg-[#161618] py-1 pl-1 pr-1 focus-within:border-[#1450d8] focus-within:ring-2 focus-within:ring-[#1450d8]/30"
         >
           {/* Adjuntar fotos: en el móvil ofrece cámara o galería */}
           <button
@@ -366,7 +464,7 @@ export default function Chat() {
             disabled={busy || photos.length >= MAX_IMAGES}
             aria-label="Añadir fotos"
             title="Añadir fotos"
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-[#0b1840] disabled:opacity-40"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-slate-400 transition hover:bg-white/10 hover:text-white disabled:opacity-40"
           >
             <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2.2} aria-hidden>
               <path strokeLinecap="round" d="M12 5v14M5 12h14" />
@@ -406,7 +504,7 @@ export default function Chat() {
             }}
             placeholder={photos.length ? "Añade una pregunta (opcional)…" : "Pregúntale algo a Tocorito…"}
             aria-label="Mensaje para Tocorito"
-            className="max-h-[140px] min-h-9 min-w-0 flex-1 resize-none bg-transparent py-1.5 text-[15px] leading-6 outline-none placeholder:text-slate-400 placeholder-shown:overflow-hidden placeholder-shown:text-ellipsis placeholder-shown:whitespace-nowrap"
+            className="max-h-[140px] min-h-9 min-w-0 flex-1 resize-none bg-transparent py-1.5 text-[15px] leading-6 text-white outline-none placeholder:text-slate-500 placeholder-shown:overflow-hidden placeholder-shown:text-ellipsis placeholder-shown:whitespace-nowrap"
           />
           {/* Nivel de razonamiento, a la derecha de la barra (como en ChatGPT) */}
           <LevelPicker
@@ -419,7 +517,7 @@ export default function Chat() {
           <button
             disabled={busy || (!input.trim() && photos.length === 0)}
             aria-label="Enviar"
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#e5262b] text-white transition active:scale-95 disabled:bg-slate-200 disabled:text-slate-400"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#e5262b] text-white transition active:scale-95 disabled:bg-white/10 disabled:text-slate-500"
           >
             <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2.5} aria-hidden>
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 19V5M5 12l7-7 7 7" />
@@ -427,11 +525,22 @@ export default function Chat() {
           </button>
         </form>
         {/* En móvil este aviso va en la bienvenida, para que la barra ocupe poco alto. */}
-        <p className="mx-auto mt-1 hidden max-w-3xl text-center text-[11px] text-slate-400 sm:block">
+        <p className="mx-auto mt-1 hidden max-w-3xl text-center text-[11px] text-slate-500 sm:block">
           Tocorito puede equivocarse. No compartas contraseñas ni datos personales.
         </p>
       </footer>
+
       {viewing && <PhotoViewer src={viewing} onClose={() => setViewing(null)} />}
+      {chatList && (
+        <ChatsSheet
+          conversations={chatList}
+          currentId={conv.id}
+          onOpen={openChat}
+          onNew={newChat}
+          onDelete={deleteChat}
+          onClose={() => setChatList(null)}
+        />
+      )}
     </div>
   );
 }
@@ -460,7 +569,6 @@ function Welcome({ onPick, sipping }: { onPick: (text: string) => void; sipping:
     </div>
   );
 }
-
 
 function Bubble({
   message,

@@ -221,3 +221,9 @@ export function newEntryId(): string {
     ? crypto.randomUUID()
     : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
+
+/** Deshacer un "quitar": vuelve a poner la anotación tal cual (mismo id). */
+export function restoreEntry(entry: Entry) {
+  const list = loadEntries();
+  if (!list.some((e) => e.id === entry.id)) saveEntries([...list, entry]);
+}

@@ -83,3 +83,9 @@ describe("typingSafe (letra a letra)", async () => {
     expect(typingSafe("Mira: $$F = m")).toBe("Mira:");
   });
 });
+
+describe("bloques de quitar mientras llegan", () => {
+  it("no se ven en el globo", () => {
+    expect(visibleReplies('Listo, quitado.\n[[QUITAR]]{"id":"ab')).toEqual(["Listo, quitado."]);
+  });
+});

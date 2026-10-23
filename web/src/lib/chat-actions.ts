@@ -5,11 +5,13 @@
 // Así funciona igual con cualquier proveedor de IA (OpenAI o Claude local).
 import { describeReminder, KIND_INFO, TIME_RE, validateEntry, type EntryDraft } from "./entries";
 
-export type ContextItem = { date: string; time: string | null; kind: string; title: string; course: string | null };
+/** `id` solo en las anotaciones del estudiante (las de Canvas no se pueden quitar). */
+export type ContextItem = { id?: string; date: string; time: string | null; kind: string; title: string; course: string | null };
 export type ChatContext = { now: string; timezone: string; upcoming: ContextItem[] };
 
 export const MAX_CONTEXT_ITEMS = 40;
 export const MAX_ACTIONS = 5;
+const ID_RE = /^[A-Za-z0-9-]{1,64}$/;
 
 const WEEKDAYS = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
 const MONTHS = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
@@ -35,6 +37,7 @@ export function validateContext(input: unknown): ChatContext | null {
       kind: shortText(item.kind, 20) || "evento",
       title,
       course: shortText(item.course, 40) || null,
+      ...(typeof item.id === "string" && ID_RE.test(item.id) ? { id: item.id } : {}),
     }];
   });
   return { now: `${date}T${clock}`, timezone: shortText(c.timezone, 64) || "desconocida", upcoming };
@@ -70,7 +73,12 @@ Reglas:
 - Si falta la fecha, o pide recordatorio y no dice la hora, PREGUNTA antes de crear nada.
 - Solo crea lo que el estudiante pidió de forma clara. Nunca inventes entradas. Como mucho ${MAX_ACTIONS} bloques.
 - En tu mensaje confirma en una frase corta lo que anotaste (la app enseña una tarjeta con el detalle).
-- No puedes borrar ni cambiar entradas: si te lo piden, di que lo hagan desde la pestaña Calendario.
+Para QUITAR algo del calendario cuando el estudiante te lo pida, escribe un bloque por cada cosa con su id
+(lo ves en la lista como "id: …"), en una sola línea:
+[[QUITAR]]{"id":"el-id-de-la-lista"}[[/QUITAR]]
+- Solo se pueden quitar las cosas que tienen id (las que anotó el estudiante o tú). Las de Canvas no: dilo.
+- Si no está claro cuál quiere quitar (hay varias parecidas), pregunta antes. Nunca quites algo que no pidió.
+- Para "cambiar" algo (otra hora, otro día): quita el viejo y añade el nuevo en la misma respuesta.
 - Si te preguntan qué tienen pendiente, responde con lo que ya tiene anotado.`;
 
 /** Datos que cambian en cada mensaje: hoy, próximos días y lo que ya hay en el calendario. */
@@ -79,7 +87,7 @@ export function calendarData(ctx: ChatContext): string {
   const nextDays = Array.from({ length: 14 }, (_, i) => `${dayName(addDays(today, i))} = ${addDays(today, i)}`).join("; ");
   const items = ctx.upcoming.length
     ? ctx.upcoming
-        .map((i) => `- ${i.date}${i.time ? ` ${i.time}` : " (todo el día)"} · ${i.kind} · ${i.title}${i.course ? ` (${i.course})` : ""}`)
+        .map((i) => `- ${i.date}${i.time ? ` ${i.time}` : " (todo el día)"} · ${i.kind} · ${i.title}${i.course ? ` (${i.course})` : ""}${i.id ? ` · id: ${i.id}` : " · de Canvas"}`)
         .join("\n")
     : "- (nada anotado)";
   return `Datos del calendario:
@@ -90,9 +98,10 @@ ${items}`;
 }
 
 const BLOCK = /\[\[CALENDARIO\]\]([\s\S]*?)\[\[\/CALENDARIO\]\]/g;
+const REMOVE_BLOCK = /\[\[QUITAR\]\]([\s\S]*?)\[\[\/QUITAR\]\]/g;
 
 /** Saca los bloques de calendario del texto y los convierte en anotaciones válidas. */
-export function extractActions(text: string): { text: string; actions: EntryDraft[]; rejected: number } {
+export function extractActions(text: string): { text: string; actions: EntryDraft[]; removals: string[]; rejected: number } {
   const actions: EntryDraft[] = [];
   let rejected = 0;
   for (const [, json] of text.matchAll(BLOCK)) {
@@ -114,16 +123,31 @@ export function extractActions(text: string): { text: string; actions: EntryDraf
       rejected++;
     }
   }
+  const removals: string[] = [];
+  for (const [, json] of text.matchAll(REMOVE_BLOCK)) {
+    try {
+      const id = (JSON.parse(json.trim()) as { id?: unknown }).id;
+      if (typeof id === "string" && ID_RE.test(id) && !removals.includes(id) && removals.length < MAX_ACTIONS) removals.push(id);
+      else rejected++;
+    } catch {
+      rejected++;
+    }
+  }
   const clean = text
     .replace(BLOCK, "")
+    .replace(REMOVE_BLOCK, "")
     .replace(/[ \t]{2,}/g, " ")
     .replace(/[ \t]+\n/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
-  return { text: clean, actions, rejected };
+  return { text: clean, actions, removals, rejected };
 }
 
 /** Línea que se añade al historial para que Tocorito recuerde lo que ya anotó. */
+export function removalNote(draft: EntryDraft): string {
+  return `[Quitado del calendario: ${KIND_INFO[draft.kind].label} "${draft.title}" del ${draft.date}]`;
+}
+
 export function actionNote(draft: EntryDraft): string {
   const when = `${draft.date}${draft.time ? ` ${draft.time}` : " (todo el día)"}`;
   const reminder = draft.reminderSec !== null ? `, aviso ${describeReminder(draft.reminderSec)}` : "";

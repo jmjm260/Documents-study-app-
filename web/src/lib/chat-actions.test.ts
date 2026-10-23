@@ -38,7 +38,7 @@ describe("extractActions", () => {
   });
 
   it("texto sin bloques queda igual", () => {
-    expect(extractActions("hola asere")).toEqual({ text: "hola asere", actions: [], rejected: 0 });
+    expect(extractActions("hola asere")).toEqual({ text: "hola asere", actions: [], removals: [], rejected: 0 });
   });
 });
 
@@ -82,5 +82,32 @@ describe("actionNote", () => {
   it("resume lo anotado para el historial", () => {
     const [draft] = extractActions(block(exam)).actions;
     expect(actionNote(draft)).toBe('[Anotado en el calendario: Examen "Prueba de física" el 2026-10-28 09:30, aviso 30 min antes]');
+  });
+});
+
+describe("quitar del calendario", () => {
+  it("lee los bloques [[QUITAR]] y los saca del texto", () => {
+    const r = extractActions('Listo, lo quité.\n[[QUITAR]]{"id":"abc-123"}[[/QUITAR]]');
+    expect(r).toMatchObject({ text: "Listo, lo quité.", removals: ["abc-123"], rejected: 0 });
+  });
+
+  it("rechaza ids raros y no repite", () => {
+    const r = extractActions('[[QUITAR]]{"id":"a"}[[/QUITAR]][[QUITAR]]{"id":"a"}[[/QUITAR]][[QUITAR]]{"id":"<script>"}[[/QUITAR]]');
+    expect(r.removals).toEqual(["a"]);
+    expect(r.rejected).toBe(2);
+  });
+
+  it("el contexto enseña el id de lo propio y marca lo de Canvas", () => {
+    const ctx = validateContext({
+      now: "2026-10-23T14:05",
+      timezone: "X",
+      upcoming: [
+        { id: "e1", date: "2026-10-27", time: null, kind: "examen", title: "Física", course: null },
+        { date: "2026-10-28", time: null, kind: "tarea", title: "Ensayo", course: null },
+      ],
+    })!;
+    const text = calendarData(ctx);
+    expect(text).toContain("Física · id: e1");
+    expect(text).toContain("Ensayo · de Canvas");
   });
 });

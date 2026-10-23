@@ -5,7 +5,7 @@ import { extractCoffee } from "./coffee";
 
 export function visibleReplies(raw: string): string[] {
   const text = raw
-    .replace(/\[\[CALENDARIO\]\][\s\S]*?(\[\[\/CALENDARIO\]\]|$)/g, "") // bloques completos o abiertos
+    .replace(/\[\[(CALENDARIO|QUITAR)\]\][\s\S]*?(\[\[\/\1\]\]|$)/g, "") // bloques completos o abiertos
     .replace(/\[(\[[A-Z/]*)?$/, "") // inicio de un bloque que aún no se ve entero: "[", "[[", "[[CALEN"…
     .replace(/\s*\|{1,2}\s*$/, "") // separador ||| a medio llegar
     .trimEnd();

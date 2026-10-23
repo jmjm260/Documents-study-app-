@@ -2,7 +2,7 @@
 // Responde en streaming (NDJSON: un objeto JSON por línea):
 //   {"type":"status","status":"preparing"|"thinking"|"generating"}
 //   {"type":"text","delta":"..."}                      ← texto en bruto, según llega
-//   {"type":"done","replies":[...],"actions":[...],"level":"medium","sip":true}  ← versión final limpia
+//   {"type":"done","replies":[...],"actions":[...],"removals":["id"],"level":"medium","sip":true}  ← versión final limpia
 //                                                     (sip = Tocorito toma café: el navegador lo anima)
 //   {"type":"error","error":"..."}
 // El navegador solo manda el NIVEL (instant/medium/high); el servidor decide modelo y parámetros.
@@ -68,11 +68,11 @@ export async function POST(request: Request) {
           }
         }
         // Sin contexto no hay acceso al calendario: ignoramos cualquier bloque.
-        const { text: withoutActions, actions } = extractActions(raw);
+        const { text: withoutActions, actions, removals } = extractActions(raw);
         // Los sorbos de café no van en el texto: el navegador anima a Tocorito.
         const { text, sip } = extractCoffee(withoutActions);
         const replies = text ? splitReply(text) : ["Listo, anotado."];
-        send({ type: "done", replies, actions: context ? actions : [], level, sip });
+        send({ type: "done", replies, actions: context ? actions : [], removals: context ? removals : [], level, sip });
         recordUsage({ provider: provider.id, level, ...usage, firstTokenMs, totalMs: Date.now() - started });
       } catch (err) {
         console.error(`chat (${provider.id}, ${level}): fallo:`, err instanceof Error ? err.message : "desconocido");

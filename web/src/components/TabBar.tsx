@@ -12,10 +12,12 @@ const TABS = [
 
 export default function TabBar() {
   const pathname = usePathname();
+  // En el chat (fondo negro) la barra también va oscura; en el calendario, clara.
+  const dark = pathname === "/";
   return (
     <nav
       aria-label="Secciones"
-      className="shrink-0 border-t-[3px] border-[#0b1840] bg-white pb-[env(safe-area-inset-bottom)]"
+      className={`shrink-0 border-t pb-[env(safe-area-inset-bottom)] ${dark ? "border-white/10 bg-black" : "border-t-[3px] border-[#0b1840] bg-white"}`}
     >
       <ul className="flex">
         {TABS.map(({ href, label, icon: Icon }) => {
@@ -26,7 +28,7 @@ export default function TabBar() {
                 href={href}
                 aria-current={active ? "page" : undefined}
                 className={`flex min-h-14 flex-col items-center justify-center gap-0.5 text-xs font-semibold transition-colors ${
-                  active ? "text-[#1450d8]" : "text-slate-500 active:text-[#1450d8]"
+                  active ? (dark ? "text-[#6ea0ff]" : "text-[#1450d8]") : dark ? "text-slate-500 active:text-white" : "text-slate-500 active:text-[#1450d8]"
                 }`}
               >
                 <Icon active={active} />

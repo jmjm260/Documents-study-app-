@@ -54,4 +54,5 @@
 - `web/src/lib/images.ts` + `web/src/components/chat/PhotoViewer.tsx` — fotos en el chat: se comprimen en el dispositivo y Tocorito resuelve lo que ve (ADR 0005).
 - `web/src/components/chat/TocoritoFigure.tsx` + `web/src/lib/coffee.ts` — Tocorito de cuerpo entero en la esquina del chat (sin círculos); cuando "toma café" no lo escribe: pone [[CAFE]] y la app lo anima (`public/tocorito-idle.webp` / `tocorito-sip.webp`).
 - `web/src/components/chat/SpeechBubble.tsx` + `useSpeech.ts` — Tocorito "habla": cada mensaje se escribe letra a letra en un globo junto a él (crece hacia la izquierda) y al terminar pasa al chat. Fondo del chat negro.
+- `web/src/lib/conversations.ts` + `web/src/components/chat/ChatsSheet.tsx` — historial de chats en el dispositivo (las fotos se guardan en miniatura): abrir, crear y borrar chats; el chat no se pierde al cambiar de pestaña.
 - `web/src/components/TabBar.tsx` — barra de pestañas inferior (Tocorito / Calendario), estilo app móvil.

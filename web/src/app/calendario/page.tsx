@@ -226,6 +226,7 @@ export default function Calendario() {
             items={byDay.get(selected) ?? []}
             onAdd={() => setSheet({ type: "new" })}
             onEdit={(item: CalendarItem) => item.entry && setSheet({ type: "edit", entry: item.entry })}
+            onDelete={(item: CalendarItem) => item.entry && deleteEntry(item.entry.id)}
           />
         </aside>
       </div>
