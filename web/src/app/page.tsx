@@ -615,7 +615,7 @@ function Bubble({
   return (
     <div className={`bubble-in flex ${spacing}`}>
       <div
-        className={`max-w-[82%] whitespace-pre-wrap break-words rounded-[20px] bg-white px-4 py-2.5 text-[15px] leading-relaxed text-[#0b1840] sm:max-w-[75%] ${
+        className={`max-w-[82%] whitespace-pre-wrap break-words rounded-[20px] border-[1.5px] border-white/90 bg-transparent px-4 py-2.5 text-[15px] leading-relaxed text-white sm:max-w-[75%] ${
           lastOfGroup ? "rounded-bl-md" : ""
         }`}
       >

@@ -22,7 +22,7 @@ export function tokenizeMath(text: string): Token[] {
 function Math({ tex, display }: { tex: string; display: boolean }) {
   const html = katex.renderToString(tex, { displayMode: display, throwOnError: false, trust: false, strict: "ignore" });
   return display ? (
-    <span className="my-2 block overflow-x-auto rounded-lg bg-slate-50 px-2 py-1.5" dangerouslySetInnerHTML={{ __html: html }} />
+    <span className="my-2 block overflow-x-auto rounded-lg bg-white/10 px-2 py-1.5" dangerouslySetInnerHTML={{ __html: html }} />
   ) : (
     <span dangerouslySetInnerHTML={{ __html: html }} />
   );
