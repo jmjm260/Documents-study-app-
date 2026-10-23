@@ -17,8 +17,16 @@ import { loadConversations, loadCurrentId, saveCurrentId, type UiMessage } from 
 const DEFAULT_TITLE = "Nuevo chat";
 const MIGRATED_KEY = "tocorito.chats.migrated";
 
+// En desarrollo React arranca los efectos dos veces: compartir la misma promesa evita subir los chats duplicados.
+let migrating: Promise<void> | null = null;
+
 /** Una sola vez: los chats que estaban guardados solo en este navegador se suben al servidor. */
-async function migrateLocalChats() {
+function migrateLocalChats() {
+  migrating ??= doMigrate().finally(() => (migrating = null));
+  return migrating;
+}
+
+async function doMigrate() {
   try {
     if (localStorage.getItem(MIGRATED_KEY)) return;
     const local = loadConversations();
