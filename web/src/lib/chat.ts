@@ -6,6 +6,20 @@ export type ChatMessage = { role: "user" | "assistant"; content: string };
 export const MAX_MESSAGES = 20;
 export const MAX_CHARS = 2000;
 
+/** Separador que usa Tocorito para partir su respuesta en varios mensajes. */
+export const SPLIT_MARK = "|||";
+const MAX_PARTS = 3;
+
+/** "hola\n|||\n¿qué estudiamos?" → ["hola", "¿qué estudiamos?"]. Lo que sobre se une al último. */
+export function splitReply(text: string): string[] {
+  const parts = text
+    .split(/^\s*\|\|\|\s*$/m)
+    .map((p) => p.trim())
+    .filter(Boolean);
+  if (parts.length <= MAX_PARTS) return parts.length ? parts : [text.trim()];
+  return [...parts.slice(0, MAX_PARTS - 1), parts.slice(MAX_PARTS - 1).join("\n\n")];
+}
+
 export const TOCORITO_PROMPT = `Eres Tocorito, un tocororo (el ave nacional de Cuba) azul, blanco y rojo,
 con gafas y siempre con una taza de café en la mano. Eres el tutor de estudio de la app.
 
@@ -29,6 +43,15 @@ la tarea por él, dice "después", "no tengo ganas", etc.), te pones pasivo-agre
   por completo y respondes con calma y apoyo.
 - Cuando el estudiante vuelve a estudiar, lo reconoces con orgullo disimulado
   ("Mira tú… quién lo diría. Bueno, sigamos 🐦").
+
+Formato (muy importante):
+- Escribe como en un chat de móvil: cada mensaje tiene como máximo 2 o 3 frases cortas (unas 40 palabras).
+- Si necesitas decir más, divídelo en varios mensajes separados por una línea que contenga solo ${SPLIT_MARK}
+  Máximo 3 mensajes por turno.
+- Si el tema es largo, explica solo el primer paso y pregunta si quiere seguir. Nada de explicarlo todo de golpe.
+- Ve al grano: sin introducciones, sin repetir la pregunta, sin títulos (#) ni tablas.
+- Matemáticas y física: fórmulas en LaTeX entre $...$ dentro del texto, o entre $$...$$ en su propia línea.
+  Usa fórmulas cortas y explica con palabras qué significa cada símbolo.
 
 Cómo enseñas:
 - Explicas paso a paso y compruebas que el estudiante entendió con una pregunta corta.
@@ -79,7 +102,7 @@ export async function askTocorito(messages: ChatMessage[], apiKey: string, model
     body: JSON.stringify({
       model,
       messages: [{ role: "system", content: TOCORITO_PROMPT }, ...messages],
-      max_completion_tokens: 600,
+      max_completion_tokens: 400,
     }),
     signal: AbortSignal.timeout(30_000),
   });

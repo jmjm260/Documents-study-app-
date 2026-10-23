@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ChatInputError, MAX_CHARS, MAX_MESSAGES, validateMessages } from "./chat";
+import { ChatInputError, MAX_CHARS, MAX_MESSAGES, splitReply, validateMessages } from "./chat";
 
 describe("validateMessages", () => {
   it("acepta una conversación normal y recorta espacios", () => {
@@ -26,5 +26,23 @@ describe("validateMessages", () => {
     ["termina con el asistente", [{ role: "user", content: "a" }, { role: "assistant", content: "b" }]],
   ])("rechaza: %s", (_, input) => {
     expect(() => validateMessages(input)).toThrow(ChatInputError);
+  });
+});
+
+describe("splitReply", () => {
+  it("parte la respuesta en mensajes por la línea |||", () => {
+    expect(splitReply("Hola asere ☕\n|||\n¿Qué estudiamos?")).toEqual(["Hola asere ☕", "¿Qué estudiamos?"]);
+  });
+
+  it("no parte por ||| dentro de una frase", () => {
+    expect(splitReply("a ||| b")).toEqual(["a ||| b"]);
+  });
+
+  it("como máximo 3 mensajes: lo que sobra se une al último", () => {
+    expect(splitReply("1\n|||\n2\n|||\n3\n|||\n4")).toEqual(["1", "2", "3\n\n4"]);
+  });
+
+  it("ignora separadores vacíos", () => {
+    expect(splitReply("|||\nhola\n|||\n|||")).toEqual(["hola"]);
   });
 });

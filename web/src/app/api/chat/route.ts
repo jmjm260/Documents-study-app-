@@ -1,4 +1,4 @@
-// POST /api/chat  { messages }  →  { reply }
+// POST /api/chat  { messages }  →  { replies: string[] }  (Tocorito puede mandar varios mensajes)
 // Las claves viven solo en el servidor (variables de entorno), nunca en el navegador.
 // No registramos el contenido de los mensajes.
 //
@@ -6,7 +6,7 @@
 //   "openai" (por defecto) → API de OpenAI con OPENAI_API_KEY
 //   "claude"               → Claude Code local, solo para pruebas en tu computadora
 import { NextResponse } from "next/server";
-import { askTocorito, ChatInputError, OpenAIError, validateMessages } from "@/lib/chat";
+import { askTocorito, ChatInputError, OpenAIError, splitReply, validateMessages } from "@/lib/chat";
 import { askTocoritoLocal, ClaudeLocalError } from "@/lib/claude-local";
 
 export const runtime = "nodejs";
@@ -31,7 +31,7 @@ export async function POST(request: Request) {
       provider === "claude"
         ? await askTocoritoLocal(messages)
         : await askTocorito(messages, apiKey!, process.env.OPENAI_MODEL || "gpt-4.1-mini");
-    return NextResponse.json({ reply });
+    return NextResponse.json({ replies: splitReply(reply) });
   } catch (err) {
     if (err instanceof ChatInputError) return NextResponse.json({ error: err.message }, { status: 400 });
     console.error(`chat (${provider}): fallo:`, err instanceof Error ? err.message : "desconocido");
