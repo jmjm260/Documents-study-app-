@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import ActionCard from "@/components/chat/ActionCard";
+import SpeechBubble from "@/components/chat/SpeechBubble";
 import TocoritoFigure from "@/components/chat/TocoritoFigure";
+import { useSpeech } from "@/components/chat/useSpeech";
 import RichText from "@/components/RichText";
 import { dayKey } from "@/lib/calendar";
 import LevelPicker from "@/components/chat/LevelPicker";
@@ -97,8 +99,6 @@ export default function Chat() {
   }
   const [thinking, setThinking] = useState(false);
   const [status, setStatus] = useState<ChatStatus>("preparing");
-  // Burbujas que se van escribiendo mientras llega la respuesta.
-  const [live, setLive] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   // Nivel de esta conversación (si no se cambia, el predeterminado del usuario).
   const [defaultLevel, setDefaultLevel] = useState<ReasoningLevel>(DEFAULT_REASONING_LEVEL);
@@ -109,9 +109,32 @@ export default function Chat() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
+  // Tocorito "habla": cada mensaje se escribe en el globo y al terminar pasa al chat.
+  const pendingCards = useRef<Entry[]>([]);
+  const speech = useSpeech({
+    onCommit: useCallback((text: string) => setMessages((m) => [...m, { role: "assistant", content: text }]), []),
+    onFinish: useCallback(() => {
+      const cards = pendingCards.current;
+      pendingCards.current = [];
+      if (cards.length) setMessages((m) => [...m, ...cards.map((entry) => ({ role: "action" as const, entry, undone: false }))]);
+    }, []),
+  });
+  const busy = thinking || speech.active;
+
+  // El chat deja sitio debajo para el globo mientras Tocorito habla.
+  const bubbleRef = useRef<HTMLButtonElement>(null);
+  const [bubbleHeight, setBubbleHeight] = useState(0);
+  useEffect(() => {
+    const el = bubbleRef.current;
+    if (!el) return setBubbleHeight(0);
+    const ro = new ResizeObserver(() => setBubbleHeight(el.offsetHeight));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [speech.active]);
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [messages, thinking, error, live]);
+  }, [messages, error, bubbleHeight]);
 
   // Preferencia guardada + qué niveles ofrece el servidor (esto también "despierta" a Tocorito).
   useEffect(() => {
@@ -148,7 +171,7 @@ export default function Chat() {
 
   async function send(text: string) {
     const content = text.trim();
-    if ((!content && photos.length === 0) || thinking) return;
+    if ((!content && photos.length === 0) || busy) return;
     const userMsg: ChatMessage = photos.length ? { role: "user", content, images: photos } : { role: "user", content };
     const next: UiMessage[] = [...messages, userMsg];
     setMessages(next);
@@ -157,7 +180,8 @@ export default function Chat() {
     setError(null);
     setThinking(true);
     setStatus("preparing");
-    setLive([]);
+    speech.start();
+    let raw = "";
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
@@ -168,13 +192,12 @@ export default function Chat() {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error ?? "Tocorito no pudo responder.");
       }
-      let raw = "";
       let sipped = false;
       for await (const ev of readEvents(res)) {
         if (ev.type === "status") setStatus(ev.status as ChatStatus);
         else if (ev.type === "text") {
           raw += ev.delta as string;
-          setLive(visibleReplies(raw));
+          speech.update(visibleReplies(raw), false);
           if (!sipped && extractCoffee(raw).sip) {
             sipped = true;
             sip();
@@ -182,18 +205,18 @@ export default function Chat() {
         } else if (ev.type === "error") {
           throw new Error((ev.error as string) ?? "Tocorito no pudo responder.");
         } else if (ev.type === "done") {
-          // Versión final limpia (sin bloques de calendario) + tarjetas de lo que anotó.
-          const replies = (ev.replies as string[]).map((content) => ({ role: "assistant" as const, content }));
+          // Versión final limpia (sin bloques de calendario). Las tarjetas de lo que anotó salen
+          // cuando Tocorito termina de hablar.
           const actions = (ev.actions as EntryDraft[]) ?? [];
-          const created = actions.length ? addEntries(actions) : [];
+          pendingCards.current = actions.length ? addEntries(actions) : [];
           if (ev.sip && !sipped) sip();
-          setMessages([...next, ...replies, ...created.map((entry) => ({ role: "action" as const, entry, undone: false }))]);
-          setLive([]);
+          speech.update(ev.replies as string[], true);
         }
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Tocorito no pudo responder.");
-      setLive([]);
+      // Lo que ya dijo se queda; el resto se descarta.
+      speech.update(visibleReplies(raw), true);
     } finally {
       setThinking(false);
     }
@@ -212,7 +235,7 @@ export default function Chat() {
   }
 
   function newChat() {
-    if (thinking) return;
+    if (busy) return;
     setMessages([]);
     setError(null);
     setInput("");
@@ -220,9 +243,8 @@ export default function Chat() {
     setLevel(defaultLevel);
   }
 
-  const empty = messages.length === 0 && !thinking;
-  // Lo ya recibido + lo que se está escribiendo ahora mismo.
-  const shown: UiMessage[] = [...messages, ...live.map((content) => ({ role: "assistant" as const, content }))];
+  const empty = messages.length === 0 && !busy;
+  const shown = messages;
 
   return (
     <div className="flex h-full flex-col bg-white font-sans text-[#0b1840]">
@@ -237,14 +259,14 @@ export default function Chat() {
           <div className="min-w-0 flex-1">
             <h1 className="text-[17px] font-extrabold leading-tight tracking-tight">Tocorito</h1>
             <p className="flex items-center gap-1.5 text-xs text-slate-500">
-              <span className={`h-1.5 w-1.5 rounded-full ${thinking ? "animate-pulse bg-[#f59e0b]" : "bg-emerald-500"}`} />
-              {thinking ? STATUS_LABEL[status] : "Tu tutor de estudio"}
+              <span className={`h-1.5 w-1.5 rounded-full ${busy ? "animate-pulse bg-[#f59e0b]" : "bg-emerald-500"}`} />
+              {thinking && !speech.shown ? STATUS_LABEL[status] : busy ? "Escribiendo…" : "Tu tutor de estudio"}
             </p>
           </div>
           {messages.length > 0 && (
             <button
               onClick={newChat}
-              disabled={thinking}
+              disabled={busy}
               aria-label="Nueva conversación"
               className="flex min-h-10 items-center gap-1.5 rounded-full border border-slate-200 px-3 text-xs font-semibold text-slate-600 active:bg-slate-50 disabled:opacity-40"
             >
@@ -258,8 +280,11 @@ export default function Chat() {
       </header>
 
       <div className="relative min-h-0 flex-1">
-      <main className="h-full overflow-y-auto bg-[#fbfaf6]">
-        <div className={`mx-auto flex min-h-full max-w-3xl flex-col px-4 py-5 sm:px-6 ${empty ? "" : "pb-28"}`}>
+      <main className="h-full overflow-y-auto bg-black [color-scheme:dark]">
+        <div
+          className="mx-auto flex min-h-full max-w-3xl flex-col px-4 py-5 sm:px-6"
+          style={empty ? undefined : { paddingBottom: (speech.active ? bubbleHeight + 24 : 0) + 112 }}
+        >
           {empty ? (
             <Welcome onPick={send} sipping={sipping} />
           ) : (
@@ -274,10 +299,8 @@ export default function Chat() {
                 const lastOfGroup = nextMsg?.role !== m.role;
                 return <Bubble key={i} message={m} firstOfGroup={firstOfGroup} lastOfGroup={lastOfGroup} onOpenPhoto={setViewing} />;
               })}
-              {/* Mientras no llega texto: "Preparando… / Pensando…" (nunca el razonamiento interno). */}
-              {thinking && live.length === 0 && <Typing label={STATUS_LABEL[status]} grouped={shown.at(-1)?.role === "assistant"} />}
               {error && (
-                <div className="mt-4 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-[#b81d21]">
+                <div className="mt-4 flex items-start gap-2 rounded-xl border border-red-400/40 bg-red-500/10 px-3 py-2.5 text-sm text-red-300">
                   <span aria-hidden>⚠️</span>
                   <span>{error}</span>
                 </div>
@@ -288,6 +311,17 @@ export default function Chat() {
         </div>
       </main>
       {/* Tocorito vive en la esquina; toma café cuando "habla" de café. */}
+      {!empty && speech.active && (
+        <div className="pointer-events-none absolute bottom-[3.25rem] left-4 right-[3.75rem] flex justify-end sm:bottom-[4.5rem] sm:right-[6.5rem]">
+          {/* Mientras no llega texto: "Pensando…" (nunca el razonamiento interno). */}
+          <SpeechBubble
+            ref={bubbleRef}
+            text={speech.shown}
+            waitingLabel={thinking && !speech.shown ? STATUS_LABEL[status] : null}
+            onSkip={speech.skip}
+          />
+        </div>
+      )}
       {!empty && (
         <div className="pointer-events-none absolute bottom-1 right-1 sm:right-4">
           {/* Más pequeño en el móvil para que quepa al lado de las burbujas */}
@@ -329,7 +363,7 @@ export default function Chat() {
           <button
             type="button"
             onClick={() => fileRef.current?.click()}
-            disabled={thinking || photos.length >= MAX_IMAGES}
+            disabled={busy || photos.length >= MAX_IMAGES}
             aria-label="Añadir fotos"
             title="Añadir fotos"
             className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-[#0b1840] disabled:opacity-40"
@@ -379,11 +413,11 @@ export default function Chat() {
             value={level}
             available={levels.map((l) => l.level)}
             noRealReasoning={levels.filter((l) => !l.realReasoning).map((l) => l.level)}
-            disabled={thinking}
+            disabled={busy}
             onChange={chooseLevel}
           />
           <button
-            disabled={thinking || (!input.trim() && photos.length === 0)}
+            disabled={busy || (!input.trim() && photos.length === 0)}
             aria-label="Enviar"
             className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#e5262b] text-white transition active:scale-95 disabled:bg-slate-200 disabled:text-slate-400"
           >
@@ -406,20 +440,20 @@ function Welcome({ onPick, sipping }: { onPick: (text: string) => void; sipping:
   return (
     <div className="m-auto flex w-full flex-col items-center py-6 text-center">
       <TocoritoFigure height={150} sipping={sipping} priority />
-      <h2 className="mt-4 text-2xl font-extrabold tracking-tight">¡Qué volá! Soy Tocorito</h2>
-      <p className="mt-1 max-w-sm text-sm text-slate-500">
+      <h2 className="mt-4 text-2xl font-extrabold tracking-tight text-white">¡Qué volá! Soy Tocorito</h2>
+      <p className="mt-1 max-w-sm text-sm text-slate-400">
         Tu tutor de estudio, con café en mano. Pregúntame lo que estés estudiando y vamos paso a paso.
       </p>
-      <p className="mt-2 text-[11px] text-slate-400 sm:hidden">Tocorito puede equivocarse. No compartas contraseñas ni datos personales.</p>
+      <p className="mt-2 text-[11px] text-slate-500 sm:hidden">Tocorito puede equivocarse. No compartas contraseñas ni datos personales.</p>
       <div className="mt-6 grid w-full max-w-lg grid-cols-1 gap-2 sm:grid-cols-2">
         {SUGGESTIONS.map((s) => (
           <button
             key={s.title}
             onClick={() => onPick(s.text)}
-            className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left shadow-sm transition hover:border-[#1450d8]/40 active:bg-slate-50"
+            className="rounded-2xl border border-white/10 bg-white/[0.06] px-4 py-3 text-left transition hover:border-[#1450d8]/70 hover:bg-white/[0.09] active:bg-white/[0.12]"
           >
-            <span className="block text-sm font-bold text-[#0b1840]">{s.title}</span>
-            <span className="mt-0.5 block text-xs text-slate-500">{s.text}</span>
+            <span className="block text-sm font-bold text-white">{s.title}</span>
+            <span className="mt-0.5 block text-xs text-slate-400">{s.text}</span>
           </button>
         ))}
       </div>
@@ -452,7 +486,7 @@ function Bubble({
                 <img
                   src={src}
                   alt={`Foto ${i + 1}`}
-                  className={`rounded-2xl border border-slate-200 object-cover ${images.length === 1 ? "max-h-64 max-w-[15rem]" : "h-28 w-28"}`}
+                  className={`rounded-2xl border border-white/10 object-cover ${images.length === 1 ? "max-h-64 max-w-[15rem]" : "h-28 w-28"}`}
                 />
               </button>
             ))}
@@ -471,28 +505,13 @@ function Bubble({
     );
   }
   return (
-    <div className={`flex ${spacing}`}>
+    <div className={`bubble-in flex ${spacing}`}>
       <div
-        className={`max-w-[82%] whitespace-pre-wrap break-words rounded-[20px] border border-slate-200 bg-white px-4 py-2.5 text-[15px] leading-relaxed text-[#0b1840] shadow-[0_1px_2px_rgba(11,24,64,0.05)] sm:max-w-[75%] ${
+        className={`max-w-[82%] whitespace-pre-wrap break-words rounded-[20px] bg-white px-4 py-2.5 text-[15px] leading-relaxed text-[#0b1840] sm:max-w-[75%] ${
           lastOfGroup ? "rounded-bl-md" : ""
         }`}
       >
         <RichText text={message.content} />
-      </div>
-    </div>
-  );
-}
-
-function Typing({ grouped, label }: { grouped: boolean; label: string }) {
-  return (
-    <div className={`flex ${grouped ? "mt-1" : "mt-4"}`} role="status" aria-label={label}>
-      <div className="flex items-center gap-2 rounded-[20px] rounded-bl-md border border-slate-200 bg-white px-4 py-2.5">
-        <span className="flex gap-1">
-          {[0, 150, 300].map((d) => (
-            <span key={d} className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#1450d8]/60" style={{ animationDelay: `${d}ms` }} />
-          ))}
-        </span>
-        <span className="text-xs font-medium text-slate-500">{label}</span>
       </div>
     </div>
   );

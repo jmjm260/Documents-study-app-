@@ -41,3 +41,18 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .tocorito-breathe, .tocorito-sip { animation: none; }
 }
+
+/* Globo de Tocorito al aparecer, y burbujas que "se posan" en el chat al terminar de escribirse. */
+@keyframes speech-in {
+  from { opacity: 0; transform: translateY(6px) scale(0.96); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes bubble-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+.speech-in { animation: speech-in 0.2s ease-out; transform-origin: 100% 100%; }
+.bubble-in { animation: bubble-in 0.3s ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  .speech-in, .bubble-in { animation: none; }
+}

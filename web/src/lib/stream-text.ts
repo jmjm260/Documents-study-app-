@@ -12,3 +12,15 @@ export function visibleReplies(raw: string): string[] {
   const { text: shown } = extractCoffee(text);
   return shown ? splitReply(shown) : [];
 }
+
+/**
+ * Mientras se escribe letra a letra, no enseñamos una fórmula a medio cerrar ("$\frac{1"…):
+ * cortamos justo antes del último "$" sin pareja. Al terminar se ve completa.
+ */
+export function typingSafe(text: string): string {
+  const cut = (at: number[]) => (at.length % 2 === 1 ? text.slice(0, at[at.length - 1]).trimEnd() : null);
+  // Primero los bloques $$…$$, luego los $…$ sueltos.
+  const blocks = [...text.matchAll(/(?<!\\)\$\$/g)].map((m) => m.index!);
+  const singles = [...text.matchAll(/(?<![\\$])\$(?!\$)/g)].map((m) => m.index!);
+  return cut(blocks) ?? cut(singles) ?? text;
+}

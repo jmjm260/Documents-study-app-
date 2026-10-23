@@ -70,3 +70,16 @@ describe("fotos hacia los proveedores", async () => {
     expect(typeof userContent([{ role: "user", content: "hola" }], "")).toBe("string");
   });
 });
+
+describe("typingSafe (letra a letra)", async () => {
+  const { typingSafe } = await import("./stream-text");
+  it("no enseña una fórmula a medio escribir", () => {
+    expect(typingSafe("La fracción es $\frac{1")).toBe("La fracción es");
+  });
+  it("las fórmulas completas se quedan", () => {
+    expect(typingSafe("Es $x = 4$ y listo")).toBe("Es $x = 4$ y listo");
+  });
+  it("un $$ de bloque abierto también se esconde", () => {
+    expect(typingSafe("Mira: $$F = m")).toBe("Mira:");
+  });
+});
