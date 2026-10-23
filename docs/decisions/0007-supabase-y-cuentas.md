@@ -1,6 +1,10 @@
 # 0007 — Supabase como base de datos y cuentas por correo
 
-**Estado:** aceptada
+**Estado:** aceptada, **en pausa** (2026-10-23)
+
+> En pausa: en local, el correo de confirmación estorba y aún faltan otras funciones antes de las
+> cuentas. El código se queda listo pero apagado: `ACCOUNTS_ENABLED` (falso por defecto). Sin él, la
+> app usa el almacén de archivos (ADR 0006) y no pide iniciar sesión. Para volver: `ACCOUNTS_ENABLED=true`.
 
 ## Contexto
 

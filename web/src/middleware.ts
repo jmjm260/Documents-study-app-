@@ -7,7 +7,8 @@ import { NextResponse, type NextRequest } from "next/server";
 export async function middleware(request: NextRequest) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
-  if (!url || !key) return NextResponse.next();
+  // Cuentas apagadas (ACCOUNTS_ENABLED distinto de "true"): no se toca la sesión.
+  if (process.env.ACCOUNTS_ENABLED !== "true" || !url || !key) return NextResponse.next();
 
   let response = NextResponse.next({ request });
   const supabase = createServerClient(url, key, {

@@ -4,8 +4,16 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 
+/**
+ * Interruptor de las cuentas. Está APAGADO por defecto: mientras desarrollamos en local la app funciona
+ * sin iniciar sesión (chats en archivos del servidor). Para encenderlo: ACCOUNTS_ENABLED=true en .env.local.
+ */
+export function accountsEnabled(): boolean {
+  return process.env.ACCOUNTS_ENABLED === "true";
+}
+
 export function supabaseConfigured(): boolean {
-  return Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY);
+  return accountsEnabled() && Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY);
 }
 
 export async function createSupabaseServer() {
