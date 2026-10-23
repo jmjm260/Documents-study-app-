@@ -4,7 +4,8 @@ Un asistente de estudio con IA que sabe qué tienes que entregar y te ayuda a ha
 
 ## Para quién
 
-Estudiantes de secundaria y universidad que usan Canvas. Compran ellos (o sus padres)
+Adolescentes (13+) y adultos que estudian en secundaria o universidad y usan Canvas.
+No es una app para niños: menores de 13 no pueden registrarse. Compran ellos (o sus padres)
 directamente; no dependemos de acuerdos con escuelas.
 
 ## Funciones

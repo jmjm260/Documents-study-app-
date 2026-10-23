@@ -1,6 +1,6 @@
 # Study App — guía para Claude
 
-Asistente de estudio con IA para estudiantes de secundaria y universidad. Se vende
+Asistente de estudio con IA para adolescentes (13+) y adultos: secundaria y universidad. Se vende
 directo al estudiante (sin contratos con escuelas). Plataformas: web primero, luego
 iOS/Android.
 
@@ -14,7 +14,8 @@ solución más simple que funcione.
 2. **Nunca** pedir tokens personales de la API de Canvas ni claves de desarrollador de una institución.
 3. Toda tarea lleva un **nivel de contexto**: `completo`, `parcial` o `solo_titulo`.
    El tutor **no inventa** contenido que no tiene (ver skill `tutor-context-levels`).
-4. Los datos de usuarios se tratan como si fueran de **menores de edad**: mínimo
+4. Público: **adolescentes (13+) y adultos**. No se permiten cuentas de menores de 13.
+   Los de 13–17 siguen siendo menores ante la ley, así que sus datos van con el máximo cuidado: mínimo
    necesario, nada en logs, nada en URLs, nada a terceros sin necesidad (skill `minor-privacy`).
 5. Secretos solo en variables de entorno. Nunca en el código ni en commits.
    `.env*` está protegido por hooks; usa `.env.example` para documentar variables.

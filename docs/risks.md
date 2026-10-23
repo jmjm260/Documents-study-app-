@@ -2,7 +2,7 @@
 
 | Riesgo | Por qué importa | Próximo paso | Estado |
 |---|---|---|---|
-| Datos de menores (COPPA en EE. UU., RGPD/edad de consentimiento en UE) | Menores de 13 (EE. UU.) requieren consentimiento parental verificable | Decidir edad mínima y flujo de consentimiento antes de abrir cuentas | abierto |
+| Datos de menores de 13–17 (RGPD: edad de consentimiento 13–16 según el país; leyes estatales de EE. UU. para adolescentes) | La app es para 13+ y adultos, pero los de 13–17 siguen siendo menores; los menores de 13 activarían COPPA | Verificación de edad al registrarse (bloquear < 13) y consentimiento parental donde la ley lo pida para 13–16 | abierto |
 | Términos de Canvas / de cada escuela | Automatizar acceso puede violar términos | Solo usar lo que el estudiante exporta o autoriza (iCal, correos, extensión) | abierto |
 | Bloqueo de apps en iOS/Android | Apple exige Screen Time API (Family Controls); Android, permisos de accesibilidad/uso | Investigar en fase 6 | abierto |
 | Grabaciones de clase | Leyes de consentimiento de grabación (uno o todos los participantes) | Fuera del MVP | aplazado |
