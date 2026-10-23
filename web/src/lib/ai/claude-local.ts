@@ -162,11 +162,13 @@ export function createClaudeLocalProvider(): ChatProvider {
       // Si el proceso pre-calentado murió mientras esperaba (p. ej. tras un límite de uso),
       // lo intentamos una vez más con uno nuevo antes de rendirnos.
       for (let attempt = 0; attempt < 2; attempt++) {
-        const proc = attempt === 0 ? await takeProcess(req.level, req.system) : await startProcess(req.level, req.system);
+        const proc = attempt === 0 && !req.oneOff ? await takeProcess(req.level, req.system) : await startProcess(req.level, req.system);
         // Mientras respondemos, ya arrancamos el siguiente proceso de este nivel.
-        prewarm(req.level, req.system);
+        if (!req.oneOff) prewarm(req.level, req.system);
 
-        const message = { type: "user", message: { role: "user", content: userContent(req.messages, req.context) } };
+        // Las tareas sueltas (título) mandan su texto tal cual; el chat manda la conversación de Tocorito.
+        const content = req.oneOff ? (req.messages.at(-1)?.content ?? "") : userContent(req.messages, req.context);
+        const message = { type: "user", message: { role: "user", content } };
         proc.child.stdin?.write(JSON.stringify(message) + "\n");
 
         const deadline = Date.now() + TIMEOUT_MS;

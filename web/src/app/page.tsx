@@ -2,11 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import ActionCard from "@/components/chat/ActionCard";
-import ChatsSheet from "@/components/chat/ChatsSheet";
+import ChatSidebar from "@/components/chat/ChatSidebar";
 import LevelPicker from "@/components/chat/LevelPicker";
 import PhotoViewer from "@/components/chat/PhotoViewer";
 import SpeechBubble from "@/components/chat/SpeechBubble";
 import TocoritoFigure from "@/components/chat/TocoritoFigure";
+import { useConversations } from "@/components/chat/useConversations";
 import { useSpeech } from "@/components/chat/useSpeech";
 import RichText from "@/components/RichText";
 import { DEFAULT_REASONING_LEVEL, REASONING_LEVELS, type ReasoningLevel } from "@/lib/ai/reasoning";
@@ -15,16 +16,7 @@ import { dayKey } from "@/lib/calendar";
 import { MAX_CHARS, MAX_IMAGES, type ChatMessage } from "@/lib/chat";
 import { actionNote, MAX_CONTEXT_ITEMS, removalNote, type ChatContext } from "@/lib/chat-actions";
 import { extractCoffee } from "@/lib/coffee";
-import {
-  loadConversations,
-  loadCurrentId,
-  newConversation,
-  saveConversations,
-  saveCurrentId,
-  upsert,
-  type Conversation,
-  type UiMessage,
-} from "@/lib/conversations";
+import type { UiMessage } from "@/lib/conversations";
 import {
   addEntries,
   canvasContextId,
@@ -130,11 +122,17 @@ async function* readEvents(res: Response): AsyncGenerator<Record<string, unknown
 }
 
 export default function Chat() {
-  // Chat abierto (se guarda en el dispositivo; así no se pierde al cambiar de pestaña).
-  const [conv, setConv] = useState<Pick<Conversation, "id" | "createdAt">>(() => newConversation());
-  const [messages, setMessages] = useState<UiMessage[]>([]);
-  const [loaded, setLoaded] = useState(false);
-  const [chatList, setChatList] = useState<Conversation[] | null>(null);
+  // Historial de chats: vive en el servidor; la lógica está en useConversations (aparte del chat).
+  const convs = useConversations();
+  const { messages, setMessages } = convs;
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  // Último estado de los mensajes (para guardar cuando Tocorito termina de hablar).
+  const messagesRef = useRef<UiMessage[]>([]);
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+  // Chat al que pertenece la respuesta en curso (por si el estudiante cambia de chat mientras tanto).
+  const replyChatId = useRef<string | null>(null);
 
   const [input, setInput] = useState("");
   // Fotos preparadas para el próximo mensaje: la grande para la IA y una miniatura para el historial.
@@ -163,33 +161,19 @@ export default function Chat() {
   // Tocorito "habla": cada mensaje se escribe en el globo y al terminar pasa al chat.
   const pendingCards = useRef<Card[]>([]);
   const speech = useSpeech({
-    onCommit: useCallback((text: string) => setMessages((m) => [...m, { role: "assistant", content: text }]), []),
+    onCommit: useCallback((text: string) => setMessages((m) => [...m, { role: "assistant", content: text }]), [setMessages]),
     onFinish: useCallback(() => {
       const cards = pendingCards.current;
       pendingCards.current = [];
       if (cards.length) setMessages((m) => [...m, ...cards.map((c) => ({ role: "action" as const, ...c, undone: false }))]);
-    }, []),
+      // Cuando ya terminó de hablar: guardar en el servidor y, si es nuevo, ponerle título con IA.
+      setTimeout(() => {
+        const id = replyChatId.current;
+        if (id) convs.afterReply(id, messagesRef.current);
+      }, 0);
+    }, [setMessages, convs]),
   });
   const busy = thinking || speech.active;
-
-  // Al abrir: el último chat que tenías abierto.
-  useEffect(() => {
-    const id = loadCurrentId();
-    const found = id ? loadConversations().find((c) => c.id === id) : undefined;
-    if (found) {
-      setConv({ id: found.id, createdAt: found.createdAt });
-      setMessages(found.messages);
-    }
-    setLoaded(true);
-  }, []);
-
-  // Guardar cada cambio del chat.
-  useEffect(() => {
-    if (!loaded) return;
-    const list = upsert(loadConversations(), { ...conv, title: "", updatedAt: Date.now(), messages });
-    saveConversations(list);
-    saveCurrentId(messages.length ? conv.id : null);
-  }, [messages, conv, loaded]);
 
   // El chat deja sitio debajo para el globo mientras Tocorito habla.
   const bubbleRef = useRef<HTMLButtonElement>(null);
@@ -253,6 +237,17 @@ export default function Chat() {
     setPhotos([]);
     setError(null);
     setThinking(true);
+    let chatId: string;
+    try {
+      chatId = await convs.ensureActive();
+    } catch {
+      setThinking(false);
+      setError("No pude crear el chat. Revisa tu conexión.");
+      return;
+    }
+    replyChatId.current = chatId;
+    // El mensaje del estudiante se guarda ya (aunque luego falle la respuesta) y el chat sube arriba.
+    convs.persist(chatId, next);
     setStatus("preparing");
     speech.start();
     let raw = "";
@@ -335,36 +330,43 @@ export default function Chat() {
     if (m.change === "added") removeEntry(m.entry.id);
     else if (canvasTask) unhideCanvas(canvasTask);
     else restoreEntry(m.entry);
-    setMessages((list) => list.map((x, i) => (i === index ? { ...m, undone: true } : x)));
+    const updated = messages.map((x, i) => (i === index ? { ...m, undone: true } : x));
+    setMessages(updated);
+    if (convs.activeId) convs.persist(convs.activeId, updated);
   }
 
-  function openChat(id: string) {
-    const found = loadConversations().find((c) => c.id === id);
-    if (!found) return;
-    setConv({ id: found.id, createdAt: found.createdAt });
-    setMessages(found.messages);
-    setError(null);
-    setChatList(null);
-  }
-
-  function newChat() {
+  async function openChat(id: string) {
     if (busy) return;
-    setConv(newConversation());
-    setMessages([]);
+    setSidebarOpen(false);
+    setError(null);
+    try {
+      await convs.open(id);
+    } catch {
+      setError("No pude abrir ese chat.");
+    }
+  }
+
+  async function newChat() {
+    if (busy) return;
+    setSidebarOpen(false);
     setError(null);
     setInput("");
     setPhotos([]);
     setLevel(defaultLevel);
-    setChatList(null);
+    try {
+      await convs.newChat();
+    } catch {
+      setError("No pude crear el chat. Revisa tu conexión.");
+    }
+    // Listo para escribir.
+    setTimeout(() => inputRef.current?.focus(), 260);
   }
 
-  function deleteChat(id: string) {
-    const list = loadConversations().filter((c) => c.id !== id);
-    saveConversations(list);
-    setChatList(list);
-    if (id === conv.id) {
-      setConv(newConversation());
-      setMessages([]);
+  async function deleteChat(id: string) {
+    try {
+      await convs.remove(id);
+    } catch {
+      setError("No pude borrar ese chat.");
     }
   }
 
@@ -380,6 +382,16 @@ export default function Chat() {
 
       <header className="shrink-0 border-b border-white/10 bg-black px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] sm:px-6">
         <div className="mx-auto flex max-w-3xl items-center gap-2">
+          <button
+            onClick={() => setSidebarOpen(true)}
+            aria-label="Abrir historial de chats"
+            aria-expanded={sidebarOpen}
+            className="-ml-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-slate-200 active:bg-white/10"
+          >
+            <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden>
+              <path strokeLinecap="round" d="M4 7h16M4 12h16M4 17h16" />
+            </svg>
+          </button>
           <div className="min-w-0 flex-1">
             <h1 className="text-[17px] font-extrabold leading-tight tracking-tight">Tocorito</h1>
             <p className="flex items-center gap-1.5 text-xs text-slate-400">
@@ -387,17 +399,6 @@ export default function Chat() {
               {thinking && !speech.shown ? STATUS_LABEL[status] : busy ? "Escribiendo…" : "Tu tutor de estudio"}
             </p>
           </div>
-          <button
-            onClick={() => setChatList(loadConversations())}
-            disabled={busy}
-            aria-label="Tus chats"
-            className="flex min-h-10 items-center gap-1.5 rounded-full border border-white/15 px-3 text-xs font-semibold text-slate-200 active:bg-white/10 disabled:opacity-40"
-          >
-            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2.2} aria-hidden>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h10" />
-            </svg>
-            Chats
-          </button>
           <button
             onClick={newChat}
             disabled={busy || messages.length === 0}
@@ -565,16 +566,17 @@ export default function Chat() {
       </footer>
 
       {viewing && <PhotoViewer src={viewing} onClose={() => setViewing(null)} />}
-      {chatList && (
-        <ChatsSheet
-          conversations={chatList}
-          currentId={conv.id}
-          onOpen={openChat}
-          onNew={newChat}
-          onDelete={deleteChat}
-          onClose={() => setChatList(null)}
-        />
-      )}
+      <ChatSidebar
+        open={sidebarOpen}
+        onOpenChange={setSidebarOpen}
+        conversations={convs.list}
+        activeId={convs.activeId}
+        hasMore={convs.hasMore}
+        onLoadMore={convs.loadMore}
+        onNewChat={newChat}
+        onSelect={openChat}
+        onDelete={deleteChat}
+      />
     </div>
   );
 }

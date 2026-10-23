@@ -25,6 +25,8 @@ export type ChatRequest = {
   messages: ChatMessage[];
   level: ReasoningLevel;
   signal?: AbortSignal;
+  /** Tarea suelta (p. ej. el título del chat): no usa ni gasta los procesos pre-calentados del chat. */
+  oneOff?: boolean;
 };
 
 export interface ChatProvider {
