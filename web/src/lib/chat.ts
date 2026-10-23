@@ -39,6 +39,21 @@ Cómo enseñas:
 
 export class ChatInputError extends Error {}
 
+export class OpenAIError extends Error {
+  constructor(public status: number, public code: string | null) {
+    super(`OpenAI respondió ${status}${code ? ` (${code})` : ""}`);
+  }
+
+  /** Mensaje para el estudiante, sin detalles de la cuenta. */
+  get friendly(): string {
+    if (this.code === "insufficient_quota" || this.code === "credit_balance_exhausted") return "La cuenta de OpenAI no tiene saldo. Añade crédito en platform.openai.com → Billing.";
+    if (this.status === 401) return "La clave de OpenAI no es válida. Revisa OPENAI_API_KEY en web/.env.local.";
+    if (this.status === 429) return "Tocorito está atendiendo a demasiada gente. Espera un momento ☕";
+    if (this.code === "model_not_found") return "El modelo configurado no existe en tu cuenta. Revisa OPENAI_MODEL.";
+    return "Tocorito no pudo responder ahora. Inténtalo de nuevo.";
+  }
+}
+
 /** Valida lo que manda el navegador: solo roles conocidos, textos no vacíos y con límite. */
 export function validateMessages(input: unknown): ChatMessage[] {
   if (!Array.isArray(input) || input.length === 0) throw new ChatInputError("No hay mensajes.");
@@ -69,8 +84,9 @@ export async function askTocorito(messages: ChatMessage[], apiKey: string, model
     signal: AbortSignal.timeout(30_000),
   });
   if (!res.ok) {
-    // No devolvemos el cuerpo del error al navegador: puede traer detalles de la cuenta.
-    throw new Error(`OpenAI respondió ${res.status}`);
+    // Solo usamos el código de error (p. ej. "insufficient_quota"), no el mensaje completo.
+    const code = ((await res.json().catch(() => null)) as { error?: { code?: string } } | null)?.error?.code;
+    throw new OpenAIError(res.status, code ?? null);
   }
   const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
   return data.choices?.[0]?.message?.content?.trim() || "Mmm… me quedé dormido un segundo ☕ ¿Me lo repites?";
