@@ -53,7 +53,7 @@ export default function LevelPicker({
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-label={`Esfuerzo de razonamiento: ${LEVEL_INFO[value].label}`}
-        className={`flex h-10 items-center gap-1 rounded-full px-3 text-sm font-medium transition disabled:opacity-50 ${
+        className={`flex h-9 items-center gap-0.5 rounded-full px-2.5 text-sm font-medium transition disabled:opacity-50 ${
           open ? "bg-slate-100 text-slate-700" : "text-slate-500 hover:bg-slate-50 hover:text-slate-700"
         }`}
       >

@@ -108,7 +108,8 @@ export default function Chat() {
     const el = inputRef.current;
     if (!el) return;
     el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 140)}px`;
+    // Vacía = una sola línea (el texto de ejemplo no debe hacerla crecer).
+    if (input) el.style.height = `${Math.min(el.scrollHeight, 140)}px`;
   }, [input]);
 
   async function send(text: string) {
@@ -242,13 +243,13 @@ export default function Chat() {
         </div>
       </main>
 
-      <footer className="shrink-0 border-t border-slate-200 bg-white px-4 pb-2 pt-3 sm:px-6">
+      <footer className="shrink-0 border-t border-slate-200 bg-white px-3 pb-2 pt-2 sm:px-6">
         <form
           onSubmit={(e) => {
             e.preventDefault();
             send(input);
           }}
-          className="relative mx-auto flex max-w-3xl items-end gap-2 rounded-3xl border border-slate-300 bg-white py-1.5 pl-4 pr-1.5 shadow-sm focus-within:border-[#1450d8] focus-within:ring-2 focus-within:ring-[#1450d8]/15"
+          className="relative mx-auto flex max-w-3xl items-end gap-1 rounded-[22px] border border-slate-300 bg-white py-1 pl-4 pr-1 shadow-sm focus-within:border-[#1450d8] focus-within:ring-2 focus-within:ring-[#1450d8]/15"
         >
           <textarea
             ref={inputRef}
@@ -265,7 +266,7 @@ export default function Chat() {
             }}
             placeholder="Pregúntale algo a Tocorito…"
             aria-label="Mensaje para Tocorito"
-            className="max-h-[140px] min-h-[2.25rem] flex-1 resize-none bg-transparent py-1.5 text-[15px] leading-6 outline-none placeholder:text-slate-400"
+            className="max-h-[140px] min-h-9 min-w-0 flex-1 resize-none bg-transparent py-1.5 text-[15px] leading-6 outline-none placeholder:text-slate-400 placeholder-shown:overflow-hidden placeholder-shown:text-ellipsis placeholder-shown:whitespace-nowrap"
           />
           {/* Nivel de razonamiento, a la derecha de la barra (como en ChatGPT) */}
           <LevelPicker
@@ -280,14 +281,15 @@ export default function Chat() {
           <button
             disabled={thinking || !input.trim()}
             aria-label="Enviar"
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#e5262b] text-white transition active:scale-95 disabled:bg-slate-200 disabled:text-slate-400"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#e5262b] text-white transition active:scale-95 disabled:bg-slate-200 disabled:text-slate-400"
           >
             <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2.5} aria-hidden>
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 19V5M5 12l7-7 7 7" />
             </svg>
           </button>
         </form>
-        <p className="mx-auto mt-1.5 max-w-3xl text-center text-[11px] text-slate-400">
+        {/* En móvil este aviso va en la bienvenida, para que la barra ocupe poco alto. */}
+        <p className="mx-auto mt-1 hidden max-w-3xl text-center text-[11px] text-slate-400 sm:block">
           Tocorito puede equivocarse. No compartas contraseñas ni datos personales.
         </p>
       </footer>
@@ -303,6 +305,7 @@ function Welcome({ onPick }: { onPick: (text: string) => void }) {
       <p className="mt-1 max-w-sm text-sm text-slate-500">
         Tu tutor de estudio, con café en mano ☕ Pregúntame lo que estés estudiando y vamos paso a paso.
       </p>
+      <p className="mt-2 text-[11px] text-slate-400 sm:hidden">Tocorito puede equivocarse. No compartas contraseñas ni datos personales.</p>
       <div className="mt-6 grid w-full max-w-lg grid-cols-1 gap-2 sm:grid-cols-2">
         {SUGGESTIONS.map((s) => (
           <button
