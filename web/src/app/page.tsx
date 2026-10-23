@@ -242,22 +242,13 @@ export default function Chat() {
         </div>
       </main>
 
-      <footer className="shrink-0 border-t border-slate-200 bg-white px-4 pb-2 pt-2.5 sm:px-6">
-        <LevelPicker
-          value={level}
-          defaultLevel={defaultLevel}
-          available={levels.map((l) => l.level)}
-          noRealReasoning={levels.filter((l) => !l.realReasoning).map((l) => l.level)}
-          disabled={thinking}
-          onChange={setLevel}
-          onMakeDefault={makeDefault}
-        />
+      <footer className="shrink-0 border-t border-slate-200 bg-white px-4 pb-2 pt-3 sm:px-6">
         <form
           onSubmit={(e) => {
             e.preventDefault();
             send(input);
           }}
-          className="mx-auto flex max-w-3xl items-end gap-2 rounded-3xl border border-slate-300 bg-white py-1.5 pl-4 pr-1.5 shadow-sm focus-within:border-[#1450d8] focus-within:ring-2 focus-within:ring-[#1450d8]/15"
+          className="relative mx-auto flex max-w-3xl items-end gap-2 rounded-3xl border border-slate-300 bg-white py-1.5 pl-4 pr-1.5 shadow-sm focus-within:border-[#1450d8] focus-within:ring-2 focus-within:ring-[#1450d8]/15"
         >
           <textarea
             ref={inputRef}
@@ -275,6 +266,16 @@ export default function Chat() {
             placeholder="Pregúntale algo a Tocorito…"
             aria-label="Mensaje para Tocorito"
             className="max-h-[140px] min-h-[2.25rem] flex-1 resize-none bg-transparent py-1.5 text-[15px] leading-6 outline-none placeholder:text-slate-400"
+          />
+          {/* Nivel de razonamiento, a la derecha de la barra (como en ChatGPT) */}
+          <LevelPicker
+            value={level}
+            defaultLevel={defaultLevel}
+            available={levels.map((l) => l.level)}
+            noRealReasoning={levels.filter((l) => !l.realReasoning).map((l) => l.level)}
+            disabled={thinking}
+            onChange={setLevel}
+            onMakeDefault={makeDefault}
           />
           <button
             disabled={thinking || !input.trim()}

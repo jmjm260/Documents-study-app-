@@ -11,10 +11,10 @@ export type ReasoningLevel = (typeof REASONING_LEVELS)[number];
 
 export const DEFAULT_REASONING_LEVEL: ReasoningLevel = "medium";
 
-export const LEVEL_INFO: Record<ReasoningLevel, { label: string; icon: string; description: string }> = {
-  instant: { label: "Instantáneo", icon: "⚡", description: "Respuestas rápidas para tareas sencillas." },
-  medium: { label: "Medio", icon: "🧠", description: "Equilibrio entre velocidad y razonamiento." },
-  high: { label: "Alto", icon: "🧠🧠", description: "Más tiempo de razonamiento para problemas complejos." },
+export const LEVEL_INFO: Record<ReasoningLevel, { label: string; description: string }> = {
+  instant: { label: "Instantáneo", description: "Respuestas rápidas para tareas sencillas." },
+  medium: { label: "Medio", description: "Equilibrio entre velocidad y razonamiento." },
+  high: { label: "Alto", description: "Más tiempo de razonamiento para problemas complejos." },
 };
 
 export const SLOWER_LEVELS_WARNING = "Los niveles superiores pueden tardar más en responder.";

@@ -50,5 +50,5 @@
 - `web/src/lib/reminders.ts` + `web/src/components/ReminderCenter.tsx` — recordatorios (aviso en la app + notificación del sistema; en web solo con la app abierta).
 - `web/src/components/chat/ActionCard.tsx` — tarjeta en el chat de lo que Tocorito anotó, con Deshacer.
 - `web/src/lib/ai/` — capa de IA: niveles de razonamiento, proveedores (OpenAI, Claude local pre-calentado), streaming y uso (ADR 0004).
-- `web/src/components/chat/LevelPicker.tsx` — selector ⚡ Instantáneo / 🧠 Medio / 🧠🧠 Alto.
+- `web/src/components/chat/LevelPicker.tsx` — botón "Medio ⌄" dentro de la barra de mensaje que abre un deslizador Instantáneo / Medio / Alto (estilo ChatGPT).
 - `web/src/components/TabBar.tsx` — barra de pestañas inferior (Tocorito / Calendario), estilo app móvil.

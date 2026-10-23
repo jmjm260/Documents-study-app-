@@ -10,7 +10,7 @@ razona la IA antes de responder.
 
 ## Decisión
 
-- **Tres niveles** (`web/src/lib/ai/reasoning.ts`): `instant`, `medium` (por defecto), `high`.
+- **Tres niveles** (`web/src/lib/ai/reasoning.ts`): `instant`, `medium` (por defecto), `high`. En la interfaz: botón a la derecha de la barra de mensaje con un deslizador, sin emojis.
   El navegador solo manda el nivel; el servidor decide modelo y parámetros.
 - **Capa de proveedores** (`web/src/lib/ai/`): cada proveedor implementa `ChatProvider`
   (`levels()` + `stream()`); `getReasoningConfig(provider, level)` traduce el nivel.
