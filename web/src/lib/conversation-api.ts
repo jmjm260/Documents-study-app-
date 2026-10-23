@@ -4,6 +4,8 @@ import type { UiMessage } from "./conversations";
 export type ConversationSummary = { id: string; title: string; updatedAt: string };
 
 async function json<T>(res: Response): Promise<T> {
+  // La sesión caducó: recargar enseña la pantalla de inicio de sesión.
+  if (res.status === 401 && typeof window !== "undefined") window.location.reload();
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error((data as { error?: string }).error ?? "Error del servidor.");
   return data as T;

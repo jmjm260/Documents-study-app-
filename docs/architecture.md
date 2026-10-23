@@ -30,8 +30,8 @@
 
 - **Web:** Next.js 15 (App Router) + TypeScript + Tailwind, en `web/`.
 - **Despliegue:** Railway (pendiente).
-- **Base de datos y auth:** sin decidir (candidata: Supabase). Hasta decidirlo, el MVP
-  **no guarda** datos: el inspector procesa el feed y lo descarta.
+- **Base de datos y auth:** Supabase (plan gratis, us-east-1): chats y perfiles con RLS, login por enlace al correo, solo 13+ (ADR 0007).
+  Calendario y preferencias siguen en el dispositivo por ahora.
 - **IA:** capa `web/src/lib/ai/` con proveedores intercambiables (OpenAI o Claude local en pruebas), niveles de razonamiento y streaming (ADR 0002 y 0004).
 
 ## Piezas implementadas
@@ -56,4 +56,5 @@
 - `web/src/components/chat/SpeechBubble.tsx` + `useSpeech.ts` — Tocorito "habla": cada mensaje se escribe letra a letra en un globo junto a él (crece hacia la izquierda) y al terminar pasa al chat. Fondo del chat negro.
 - `web/src/app/api/conversations/` + `web/src/lib/server/` — historial de chats en el SERVIDOR (ADR 0006): lista paginada solo con metadatos, mensajes al abrir, títulos con IA, identidad anónima por dispositivo. Almacenamiento provisional en archivos (`.data/`), listo para cambiar a base de datos.
 - `web/src/components/chat/ChatSidebar.tsx` + `useConversations.ts` — panel lateral desde la izquierda (82%) con "Nuevo chat" y el historial; ☰ o deslizar desde el borde.
+- `web/src/lib/supabase/` + `web/src/middleware.ts` + `web/src/components/auth/` — cuentas con Supabase: pantalla de inicio de sesión, sesión en cookies, regla 13+ (ADR 0007). `web/src/lib/server/supabase-store.ts` guarda los chats en la base de datos.
 - `web/src/components/TabBar.tsx` — barra de pestañas inferior (Tocorito / Calendario), estilo app móvil.

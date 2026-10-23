@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import AuthGate from "@/components/auth/AuthGate";
 import ReminderCenter from "@/components/ReminderCenter";
 import TabBar from "@/components/TabBar";
 import "katex/dist/katex.min.css";
@@ -35,13 +36,15 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="es">
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
-        {/* Estructura de app: pantalla arriba, barra de pestañas fija abajo */}
-        <div className="flex h-dvh flex-col overflow-hidden">
-          <div className="min-h-0 flex-1">{children}</div>
-          <TabBar />
-        </div>
-        <ReminderCenter />
+      <body className={`${geistSans.variable} ${geistMono.variable} bg-black antialiased`}>
+        {/* Sin sesión: pantalla de inicio de sesión. Con sesión: la app (pantalla + pestañas abajo). */}
+        <AuthGate>
+          <div className="flex h-dvh flex-col overflow-hidden">
+            <div className="min-h-0 flex-1">{children}</div>
+            <TabBar />
+          </div>
+          <ReminderCenter />
+        </AuthGate>
       </body>
     </html>
   );

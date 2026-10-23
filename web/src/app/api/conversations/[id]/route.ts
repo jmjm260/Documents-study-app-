@@ -1,13 +1,14 @@
 // DELETE /api/conversations/:id → borra el chat y sus mensajes (solo si es de este usuario).
-import { CONVERSATION_ID_RE, getConversationStore } from "@/lib/server/conversation-store";
-import { identify, jsonFor } from "@/lib/server/identity";
+import { NextResponse } from "next/server";
+import { conversationContext } from "@/lib/server/conversation-context";
+import { CONVERSATION_ID_RE } from "@/lib/server/conversation-store";
 
 export const runtime = "nodejs";
 
 export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  const who = identify(request);
+  const ctx = await conversationContext(request);
+  if (ctx instanceof NextResponse) return ctx;
   const { id } = await params;
-  if (!CONVERSATION_ID_RE.test(id)) return jsonFor(who, { error: "Chat no encontrado." }, { status: 404 });
-  const ok = await getConversationStore().remove(who.userId, id);
-  return jsonFor(who, ok ? { ok: true } : { error: "Chat no encontrado." }, { status: ok ? 200 : 404 });
+  const ok = CONVERSATION_ID_RE.test(id) && (await ctx.store.remove(ctx.userId, id));
+  return ctx.json(ok ? { ok: true } : { error: "Chat no encontrado." }, { status: ok ? 200 : 404 });
 }

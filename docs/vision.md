@@ -21,7 +21,7 @@ directamente; no dependemos de acuerdos con escuelas.
 |---|---|---|
 | 1 | Fundación: repo, CLAUDE.md, docs, subagentes, hooks | ✅ hecha |
 | 2 | Validación: inspeccionar un `.ics` real de Canvas con el inspector | ⏳ siguiente |
-| 3 | Investigación cruzada y mapa de arquitectura (base de datos, auth) | |
+| 3 | Investigación cruzada y mapa de arquitectura (base de datos, auth) | 🟡 Supabase + cuentas por correo (ADR 0007) |
 | 4 | MVP web: conexión por calendario, tutor IA, cuentas | 🟡 inspector de calendario + chat con Tocorito |
 | 5 | Extensión de navegador para enriquecer tareas | |
 | 6 | Móvil y modo Focus | |

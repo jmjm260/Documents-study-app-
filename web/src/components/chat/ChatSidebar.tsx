@@ -5,6 +5,7 @@
 // Gestos: abrir deslizando desde el borde izquierdo, cerrar arrastrando a la izquierda o tocando fuera.
 // El panel nunca se desmonta: así la animación de cierre siempre se ve.
 import { useEffect, useRef, useState } from "react";
+import { useSession } from "@/components/auth/AuthGate";
 import type { ConversationSummary } from "@/lib/conversation-api";
 
 const EDGE_PX = 20; // el gesto de abrir solo empieza a menos de 20 px del borde
@@ -39,6 +40,7 @@ export default function ChatSidebar({
   // Cuánto se ha arrastrado (px): positivo = hacia la derecha. null = sin arrastre.
   const [dragX, setDragX] = useState<number | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
+  const session = useSession();
   const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -162,7 +164,7 @@ export default function ChatSidebar({
           {/* Historial: se desplaza solo */}
           <nav
             aria-label="Historial de chats"
-            className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pb-[max(1rem,env(safe-area-inset-bottom))]"
+            className={`min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 ${session ? "pb-2" : "pb-[max(1rem,env(safe-area-inset-bottom))]"}`}
             onScroll={(e) => {
               const el = e.currentTarget;
               if (hasMore && el.scrollTop + el.clientHeight > el.scrollHeight - 120) onLoadMore();
@@ -216,6 +218,14 @@ export default function ChatSidebar({
               </ul>
             )}
           </nav>
+          {session && (
+            <div className="flex shrink-0 items-center gap-2 border-t border-white/10 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 text-xs text-slate-500">
+              <span className="min-w-0 flex-1 truncate">{session.email}</span>
+              <button onClick={session.signOut} className="min-h-9 shrink-0 rounded-full px-3 font-semibold text-slate-300 active:bg-white/10">
+                Cerrar sesión
+              </button>
+            </div>
+          )}
         </aside>
       </div>
     </>

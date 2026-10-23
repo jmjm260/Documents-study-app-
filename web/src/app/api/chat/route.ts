@@ -16,6 +16,7 @@ import { recordUsage } from "@/lib/ai/usage";
 import { TOCORITO_SYSTEM as SYSTEM } from "@/lib/ai/system";
 import { ChatInputError, splitReply, validateMessages } from "@/lib/chat";
 import { calendarData, extractActions, validateContext } from "@/lib/chat-actions";
+import { createSupabaseServer, supabaseConfigured } from "@/lib/supabase/server";
 import { extractCoffee } from "@/lib/coffee";
 
 export const runtime = "nodejs";
@@ -24,6 +25,11 @@ export const runtime = "nodejs";
 if (providerId() === "claude-local" && process.env.NODE_ENV !== "production") prewarmAll(SYSTEM);
 
 export async function POST(request: Request) {
+  // Con cuentas activadas, solo quien inició sesión puede usar la IA (así nadie gasta créditos desde fuera).
+  if (supabaseConfigured()) {
+    const { data } = await (await createSupabaseServer()).auth.getUser();
+    if (!data.user) return NextResponse.json({ error: "Inicia sesión para hablar con Tocorito." }, { status: 401 });
+  }
   const body = (await request.json().catch(() => null)) as { messages?: unknown; context?: unknown; reasoningLevel?: unknown } | null;
 
   let messages;
