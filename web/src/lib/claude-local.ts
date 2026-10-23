@@ -23,15 +23,15 @@ export function transcriptFor(messages: ChatMessage[]): string {
     "",
     ...lines,
     "",
-    "Responde como Tocorito al último mensaje del estudiante. Escribe solo el texto de tu respuesta.",
+    "Responde como Tocorito al último mensaje del estudiante. Escribe solo tu respuesta (con los bloques [[CALENDARIO]] si hace falta).",
   ].join("\n");
 }
 
-export async function askTocoritoLocal(messages: ChatMessage[]): Promise<string> {
+export async function askTocoritoLocal(messages: ChatMessage[], system: string = TOCORITO_PROMPT): Promise<string> {
   // Carpeta temporal vacía: así Claude no ve el proyecto ni carga su CLAUDE.md, hooks o MCP.
   const dir = await mkdtemp(join(tmpdir(), "tocorito-"));
   const promptFile = join(dir, "system.txt");
-  await writeFile(promptFile, TOCORITO_PROMPT, "utf8");
+  await writeFile(promptFile, system, "utf8");
 
   const bin = process.env.CLAUDE_CLI_PATH || "claude";
   const args = [

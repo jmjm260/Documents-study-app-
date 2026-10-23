@@ -1,5 +1,6 @@
 // Lista de lo que hay en el día elegido: hora a la izquierda, barra de color y detalles.
-import { KIND_INFO, type CalendarItem } from "@/lib/entries";
+import { BellIcon } from "@/components/calendar/EntryForm";
+import { describeReminder, KIND_INFO, type CalendarItem } from "@/lib/entries";
 
 const LEVEL_LABEL = { completo: "Contexto completo", parcial: "Contexto parcial", solo_titulo: "Solo título" } as const;
 
@@ -60,6 +61,13 @@ function AgendaRow({ item, onEdit }: { item: CalendarItem; onEdit: (item: Calend
           <span>·</span>
           <span>{item.source === "canvas" ? "Canvas" : "Personal"}</span>
           {item.contextLevel && <><span>·</span><span>{LEVEL_LABEL[item.contextLevel]}</span></>}
+          {item.entry?.reminder != null && (
+            <span className="flex items-center gap-0.5 font-semibold text-[#1450d8]">
+              <span>·</span>
+              <BellIcon className="h-3 w-3" />
+              {describeReminder(item.entry.reminder)}
+            </span>
+          )}
         </p>
         {item.source === "usuario" && item.description && (
           <p className="mt-1.5 line-clamp-3 whitespace-pre-wrap text-sm text-slate-600">{item.description}</p>

@@ -2,18 +2,46 @@
 
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
+import ActionCard from "@/components/chat/ActionCard";
 import RichText from "@/components/RichText";
+import { dayKey } from "@/lib/calendar";
 import { MAX_CHARS, type ChatMessage } from "@/lib/chat";
+import { actionNote, MAX_CONTEXT_ITEMS, type ChatContext } from "@/lib/chat-actions";
+import { addEntries, KIND_INFO, loadCanvasCache, loadEntries, removeEntry, toCalendarItems, type Entry, type EntryDraft } from "@/lib/entries";
+
+// En la pantalla, además de mensajes, mostramos tarjetas de lo que Tocorito anotó.
+type UiMessage = ChatMessage | { role: "action"; entry: Entry; undone: boolean };
+
+/** Resumen del calendario (próximos 60 días) que se manda a Tocorito con cada mensaje. */
+function calendarContext(): ChatContext {
+  const now = new Date();
+  const today = dayKey(now);
+  const limit = dayKey(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 60));
+  const upcoming = toCalendarItems(loadCanvasCache(), loadEntries())
+    .filter((i) => i.day >= today && i.day <= limit)
+    .sort((a, b) => (a.day + (a.time ?? "")).localeCompare(b.day + (b.time ?? "")))
+    .slice(0, MAX_CONTEXT_ITEMS)
+    .map((i) => ({ date: i.day, time: i.time, kind: KIND_INFO[i.kind].label.toLowerCase(), title: i.title, course: i.course }));
+  const hhmm = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+  return { now: `${today}T${hhmm}`, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, upcoming };
+}
+
+/** Lo que se manda a la IA: las tarjetas se convierten en una nota para que Tocorito las recuerde. */
+function toHistory(messages: UiMessage[]): ChatMessage[] {
+  return messages.flatMap((m): ChatMessage[] =>
+    m.role === "action" ? (m.undone ? [] : [{ role: "assistant", content: actionNote(m.entry) }]) : [m]
+  );
+}
 
 const SUGGESTIONS = [
   { title: "Explícame un tema", text: "Explícame las fracciones paso a paso" },
   { title: "Hazme un quiz", text: "Hazme un quiz rápido de 3 preguntas de biología" },
-  { title: "Organiza mi semana", text: "Ayúdame a organizar mi semana de estudio" },
-  { title: "Mejora mi resumen", text: "¿Cómo hago un buen resumen?" },
+  { title: "Anota un examen", text: "Anota que el viernes tengo examen de química a las 9:00 y recuérdame 1 hora antes" },
+  { title: "¿Qué tengo pendiente?", text: "¿Qué tengo pendiente esta semana?" },
 ];
 
 export default function Chat() {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messages, setMessages] = useState<UiMessage[]>([]);
   const [input, setInput] = useState("");
   const [thinking, setThinking] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -35,7 +63,7 @@ export default function Chat() {
   async function send(text: string) {
     const content = text.trim();
     if (!content || thinking) return;
-    const next = [...messages, { role: "user" as const, content }];
+    const next: UiMessage[] = [...messages, { role: "user", content }];
     setMessages(next);
     setInput("");
     setError(null);
@@ -44,7 +72,7 @@ export default function Chat() {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: next }),
+        body: JSON.stringify({ messages: toHistory(next), context: calendarContext() }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Tocorito no pudo responder.");
@@ -56,11 +84,22 @@ export default function Chat() {
         shown = [...shown, { role: "assistant", content: reply }];
         setMessages(shown);
       }
+      // Lo que Tocorito anotó en el calendario: lo guardamos y enseñamos una tarjeta por cada cosa.
+      const actions: EntryDraft[] = data.actions ?? [];
+      if (actions.length) {
+        const created = addEntries(actions);
+        setMessages([...shown, ...created.map((entry) => ({ role: "action" as const, entry, undone: false }))]);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Tocorito no pudo responder.");
     } finally {
       setThinking(false);
     }
+  }
+
+  function undo(id: string) {
+    removeEntry(id);
+    setMessages((list) => list.map((m) => (m.role === "action" && m.entry.id === id ? { ...m, undone: true } : m)));
   }
 
   function newChat() {
@@ -113,6 +152,9 @@ export default function Chat() {
           ) : (
             <div className="flex flex-col">
               {messages.map((m, i) => {
+                if (m.role === "action") {
+                  return <ActionCard key={m.entry.id} entry={m.entry} undone={m.undone} onUndo={() => undo(m.entry.id)} />;
+                }
                 const prev = messages[i - 1];
                 const nextMsg = messages[i + 1];
                 const firstOfGroup = prev?.role !== m.role;

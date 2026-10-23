@@ -2,7 +2,7 @@
 
 // Formulario para anotar una tarea, un examen o una nota en un día.
 import { useState } from "react";
-import { ENTRY_LIMITS, KIND_INFO, validateEntry, type EntryDraft, type EntryKind } from "@/lib/entries";
+import { describeReminder, ENTRY_LIMITS, KIND_INFO, REMINDER_PRESETS, validateEntry, type EntryDraft, type EntryKind } from "@/lib/entries";
 
 const KINDS: EntryKind[] = ["tarea", "examen", "nota"];
 
@@ -95,6 +95,34 @@ export default function EntryForm({
         />
       </label>
 
+      <label className="flex flex-col gap-1.5 text-sm font-semibold text-slate-600">
+        <span className="flex items-center gap-1.5">
+          <BellIcon /> Recordatorio
+        </span>
+        <span className="relative">
+          <select
+            value={draft.reminder ?? ""}
+            onChange={(e) => set("reminder", e.target.value === "" ? null : Number(e.target.value))}
+            className={`${field} appearance-none pr-9`}
+          >
+            <option value="">Sin aviso</option>
+            {[...new Set([...REMINDER_PRESETS, ...(draft.reminder !== null ? [draft.reminder] : [])])]
+              .sort((a, b) => a - b)
+              .map((m) => (
+                <option key={m} value={m}>
+                  {describeReminder(m)}
+                </option>
+              ))}
+          </select>
+          <svg viewBox="0 0 24 24" className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" fill="none" stroke="currentColor" strokeWidth={2.5} aria-hidden>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M6 9l6 6 6-6" />
+          </svg>
+        </span>
+        {draft.reminder !== null && draft.time === null && (
+          <span className="text-xs font-normal text-slate-400">En “todo el día”, el aviso cuenta desde las 8:00.</span>
+        )}
+      </label>
+
       {draft.kind !== "nota" && (
         <label className="flex flex-col gap-1.5 text-sm font-semibold text-slate-600">
           Materia <span className="-mt-1 text-xs font-normal text-slate-400">Opcional</span>
@@ -133,5 +161,13 @@ export default function EntryForm({
         </button>
       </div>
     </form>
+  );
+}
+
+export function BellIcon({ className = "h-4 w-4" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth={2.2} aria-hidden>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M6 8a6 6 0 1112 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.9 1.9 0 003.4 0" />
+    </svg>
   );
 }

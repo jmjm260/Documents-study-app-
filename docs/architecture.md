@@ -46,4 +46,7 @@
 - `web/src/lib/entries.ts` — anotaciones propias (tarea, examen, nota), validación y vista unificada con Canvas (+ pruebas). Hoy en localStorage; con cuentas irán a la base de datos.
 - `web/src/components/calendar/` — MonthGrid, DayAgenda, EntryForm, CanvasConnect.
 - `web/src/components/Sheet.tsx` — hoja modal que sube desde abajo (estilo iOS).
+- `web/src/lib/chat-actions.ts` — Tocorito lee el calendario y anota cosas con bloques [[CALENDARIO]] (ADR 0003, + pruebas).
+- `web/src/lib/reminders.ts` + `web/src/components/ReminderCenter.tsx` — recordatorios (aviso en la app + notificación del sistema; en web solo con la app abierta).
+- `web/src/components/chat/ActionCard.tsx` — tarjeta en el chat de lo que Tocorito anotó, con Deshacer.
 - `web/src/components/TabBar.tsx` — barra de pestañas inferior (Tocorito / Calendario), estilo app móvil.

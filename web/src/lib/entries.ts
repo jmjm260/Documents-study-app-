@@ -13,11 +13,34 @@ export type Entry = {
   time: string | null; // "HH:MM" o null = todo el día
   course: string | null;
   notes: string;
+  /** Minutos antes para avisar, o null = sin aviso. En "todo el día" cuenta desde las 08:00. */
+  reminder: number | null;
 };
 
 export type EntryDraft = Omit<Entry, "id">;
 
-export const ENTRY_LIMITS = { title: 120, course: 40, notes: 2000 };
+export const ENTRY_LIMITS = { title: 120, course: 40, notes: 2000, reminder: 7 * 24 * 60 };
+
+/** Hora base de los avisos para lo que es "todo el día". */
+export const ALL_DAY_REMINDER_TIME = "08:00";
+
+export const REMINDER_PRESETS = [0, 5, 10, 15, 30, 60, 120, 1440];
+
+export function describeReminder(minutes: number): string {
+  if (minutes === 0) return "A la hora";
+  if (minutes % 1440 === 0) return minutes === 1440 ? "1 día antes" : `${minutes / 1440} días antes`;
+  if (minutes % 60 === 0) return minutes === 60 ? "1 hora antes" : `${minutes / 60} horas antes`;
+  if (minutes > 60) return `${Math.floor(minutes / 60)} h ${minutes % 60} min antes`;
+  return `${minutes} min antes`;
+}
+
+/** Momento exacto (hora local) en que debe sonar el aviso, o null si no tiene. */
+export function reminderAt(entry: Pick<Entry, "date" | "time" | "reminder">): Date | null {
+  if (entry.reminder === null) return null;
+  const start = new Date(`${entry.date}T${entry.time ?? ALL_DAY_REMINDER_TIME}:00`);
+  if (Number.isNaN(start.getTime())) return null;
+  return new Date(start.getTime() - entry.reminder * 60_000);
+}
 
 export const KIND_INFO = {
   tarea: { label: "Tarea", color: "#1450d8" },
@@ -44,18 +67,30 @@ export type CalendarItem = {
 };
 
 /** Devuelve el borrador limpio o un mensaje de error para mostrar al usuario. */
-export function validateEntry(draft: EntryDraft): { ok: true; value: EntryDraft } | { ok: false; error: string } {
-  const title = draft.title.trim();
-  const course = draft.course?.trim() || null;
-  const notes = draft.notes.trim();
-  if (!["tarea", "examen", "nota"].includes(draft.kind)) return { ok: false, error: "Tipo no válido." };
+// Acepta "unknown" porque también valida lo que propone Tocorito o lo leído del almacenamiento.
+export function validateEntry(input: unknown): { ok: true; value: EntryDraft } | { ok: false; error: string } {
+  const draft = (input ?? {}) as Partial<Record<keyof EntryDraft, unknown>>;
+  const str = (v: unknown) => (typeof v === "string" ? v : "");
+  const title = str(draft.title).trim();
+  const course = str(draft.course).trim() || null;
+  const notes = str(draft.notes).trim();
+  const time = draft.time === null || draft.time === undefined || draft.time === "" ? null : draft.time;
+  const reminder = draft.reminder === null || draft.reminder === undefined ? null : draft.reminder;
+  if (!["tarea", "examen", "nota"].includes(draft.kind as string)) return { ok: false, error: "Tipo no válido." };
   if (!title) return { ok: false, error: "Escribe un título." };
   if (title.length > ENTRY_LIMITS.title) return { ok: false, error: `El título puede tener hasta ${ENTRY_LIMITS.title} caracteres.` };
   if (course && course.length > ENTRY_LIMITS.course) return { ok: false, error: `La materia puede tener hasta ${ENTRY_LIMITS.course} caracteres.` };
   if (notes.length > ENTRY_LIMITS.notes) return { ok: false, error: `La nota puede tener hasta ${ENTRY_LIMITS.notes} caracteres.` };
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(draft.date) || Number.isNaN(Date.parse(draft.date))) return { ok: false, error: "Elige una fecha." };
-  if (draft.time !== null && !/^([01]\d|2[0-3]):[0-5]\d$/.test(draft.time)) return { ok: false, error: "Hora no válida." };
-  return { ok: true, value: { kind: draft.kind, title, date: draft.date, time: draft.time, course, notes } };
+  const date = str(draft.date);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(Date.parse(date))) return { ok: false, error: "Elige una fecha." };
+  if (time !== null && (typeof time !== "string" || !/^([01]\d|2[0-3]):[0-5]\d$/.test(time))) return { ok: false, error: "Hora no válida." };
+  if (reminder !== null && (!Number.isInteger(reminder) || (reminder as number) < 0 || (reminder as number) > ENTRY_LIMITS.reminder)) {
+    return { ok: false, error: "Recordatorio no válido." };
+  }
+  return {
+    ok: true,
+    value: { kind: draft.kind as EntryKind, title, date, time: time as string | null, course, notes, reminder: reminder as number | null },
+  };
 }
 
 function canvasTime(task: Task): string | null {
@@ -109,12 +144,22 @@ export function itemsByDay(items: CalendarItem[]): Map<string, CalendarItem[]> {
   return map;
 }
 
+// --- Almacenamiento en el dispositivo (en la app nativa: almacenamiento local de la app) ---
+
 const STORAGE_KEY = "tocorito.entries.v1";
+const CANVAS_CACHE_KEY = "tocorito.canvasCache.v1";
+
+/** Evento que avisa a las demás pantallas (y a los recordatorios) de que algo cambió. */
+export const ENTRIES_CHANGED = "tocorito:entries-changed";
 
 export function loadEntries(): Entry[] {
   try {
     const data = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "[]");
-    return Array.isArray(data) ? data.filter((e) => typeof e?.id === "string" && validateEntry(e).ok) : [];
+    if (!Array.isArray(data)) return [];
+    return data.flatMap((e) => {
+      const r = typeof e?.id === "string" ? validateEntry(e) : null;
+      return r?.ok ? [{ ...r.value, id: e.id as string }] : [];
+    });
   } catch {
     return [];
   }
@@ -125,6 +170,36 @@ export function saveEntries(entries: Entry[]) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
   } catch {
     // Sin almacenamiento (modo privado): las notas viven mientras la pantalla esté abierta.
+  }
+  window.dispatchEvent(new Event(ENTRIES_CHANGED));
+}
+
+export function addEntries(drafts: EntryDraft[]): Entry[] {
+  const created = drafts.map((d) => ({ ...d, id: newEntryId() }));
+  saveEntries([...loadEntries(), ...created]);
+  return created;
+}
+
+export function removeEntry(id: string) {
+  saveEntries(loadEntries().filter((e) => e.id !== id));
+}
+
+/** Copia de lo último que trajo Canvas, para que Tocorito y el calendario lo vean al instante. */
+export function loadCanvasCache(): Task[] {
+  try {
+    const data = JSON.parse(localStorage.getItem(CANVAS_CACHE_KEY) ?? "[]");
+    return Array.isArray(data) ? data : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveCanvasCache(tasks: Task[] | null) {
+  try {
+    if (tasks) localStorage.setItem(CANVAS_CACHE_KEY, JSON.stringify(tasks));
+    else localStorage.removeItem(CANVAS_CACHE_KEY);
+  } catch {
+    // Sin almacenamiento: no pasa nada, se vuelve a descargar.
   }
 }
 

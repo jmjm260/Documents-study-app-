@@ -8,9 +8,12 @@ import MonthGrid from "@/components/calendar/MonthGrid";
 import Sheet from "@/components/Sheet";
 import { dayKey, monthGrid } from "@/lib/calendar";
 import {
+  ENTRIES_CHANGED,
   itemsByDay,
+  loadCanvasCache,
   loadEntries,
   newEntryId,
+  saveCanvasCache,
   saveEntries,
   toCalendarItems,
   type CalendarItem,
@@ -18,6 +21,7 @@ import {
   type EntryDraft,
 } from "@/lib/entries";
 import { parseIcs } from "@/lib/ics";
+import { requestNotificationPermission } from "@/lib/reminders";
 import { eventsToTasks, type Task } from "@/lib/tasks";
 
 // La URL del feed se guarda solo en este dispositivo. En la app móvil irá al almacenamiento
@@ -70,6 +74,7 @@ export default function Calendario() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "No se pudo leer el calendario.");
       setTasks(data.tasks);
+      saveCanvasCache(data.tasks);
       setSource("url");
       writeFeedUrl(url);
     } catch (err) {
@@ -79,11 +84,24 @@ export default function Calendario() {
     }
   }, []);
 
-  // Al abrir: recuperamos lo guardado en este dispositivo.
+  // Al abrir: recuperamos lo guardado en este dispositivo (y lo último de Canvas, al instante).
   useEffect(() => {
     setEntries(loadEntries());
+    // "Ver en calendario" desde el chat abre /calendario?dia=AAAA-MM-DD
+    const dia = new URLSearchParams(window.location.search).get("dia");
+    if (dia && /^\d{4}-\d{2}-\d{2}$/.test(dia)) {
+      const d = new Date(`${dia}T00:00:00`);
+      setSelected(dia);
+      setView({ year: d.getFullYear(), month: d.getMonth() });
+    }
+    const cached = loadCanvasCache();
+    if (cached.length) setTasks(cached);
     const saved = readFeedUrl();
     if (saved) loadFromUrl(saved);
+    // Si Tocorito anota algo desde el chat, el calendario se entera.
+    const refresh = () => setEntries(loadEntries());
+    window.addEventListener(ENTRIES_CHANGED, refresh);
+    return () => window.removeEventListener(ENTRIES_CHANGED, refresh);
   }, [loadFromUrl]);
 
   // El archivo se lee en el dispositivo: no sale de él.
@@ -91,12 +109,15 @@ export default function Calendario() {
     const events = parseIcs(await file.text());
     if (events.length === 0) return setError("Ese archivo no tiene eventos de calendario.");
     setError(null);
-    setTasks(eventsToTasks(events));
+    const fileTasks = eventsToTasks(events);
+    setTasks(fileTasks);
+    saveCanvasCache(fileTasks);
     setSource("file");
   }
 
   function disconnect() {
     writeFeedUrl(null);
+    saveCanvasCache(null);
     setTasks([]);
     setSource(null);
   }
@@ -107,6 +128,7 @@ export default function Calendario() {
   }
 
   function saveDraft(draft: EntryDraft) {
+    if (draft.reminder !== null) requestNotificationPermission();
     if (sheet?.type === "edit") {
       updateEntries(entries.map((e) => (e.id === sheet.entry.id ? { ...draft, id: e.id } : e)));
     } else {
@@ -222,7 +244,7 @@ export default function Calendario() {
       {sheet?.type === "new" && (
         <Sheet title="Nueva anotación" onClose={closeSheet}>
           <EntryForm
-            initial={{ kind: "tarea", title: "", date: selected, time: null, course: null, notes: "" }}
+            initial={{ kind: "tarea", title: "", date: selected, time: null, course: null, notes: "", reminder: null }}
             onSave={saveDraft}
           />
         </Sheet>

@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import ReminderCenter from "@/components/ReminderCenter";
 import TabBar from "@/components/TabBar";
 import "katex/dist/katex.min.css";
 import "./globals.css";
@@ -40,6 +41,7 @@ export default function RootLayout({
           <div className="min-h-0 flex-1">{children}</div>
           <TabBar />
         </div>
+        <ReminderCenter />
       </body>
     </html>
   );

@@ -110,13 +110,18 @@ export function validateMessages(input: unknown): ChatMessage[] {
   return messages;
 }
 
-export async function askTocorito(messages: ChatMessage[], apiKey: string, model: string): Promise<string> {
+export async function askTocorito(
+  messages: ChatMessage[],
+  apiKey: string,
+  model: string,
+  system: string = TOCORITO_PROMPT
+): Promise<string> {
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({
       model,
-      messages: [{ role: "system", content: TOCORITO_PROMPT }, ...messages],
+      messages: [{ role: "system", content: system }, ...messages],
       max_completion_tokens: 400,
     }),
     signal: AbortSignal.timeout(30_000),
