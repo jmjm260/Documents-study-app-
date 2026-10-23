@@ -20,6 +20,7 @@ if (envFile) {
 
 const patterns = [
   [/sk-ant-[A-Za-z0-9_-]{20,}/, "clave de Anthropic"],
+  [/sk-(proj-|svcacct-)?[A-Za-z0-9_-]{40,}/, "clave de OpenAI"],
   [/sk_live_[A-Za-z0-9]{16,}/, "clave live de Stripe"],
   [/rk_live_[A-Za-z0-9]{16,}/, "clave restringida de Stripe"],
   [/AKIA[0-9A-Z]{16}/, "clave de AWS"],

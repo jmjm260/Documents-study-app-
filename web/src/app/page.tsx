@@ -1,126 +1,171 @@
 "use client";
 
-import { useState } from "react";
-import { parseIcs } from "@/lib/ics";
-import { eventsToTasks, type ContextLevel, type Task } from "@/lib/tasks";
+import Image from "next/image";
+import Link from "next/link";
+import { useEffect, useRef, useState } from "react";
+import type { ChatMessage } from "@/lib/chat";
 
-const LEVEL_STYLE: Record<ContextLevel, { label: string; className: string }> = {
-  completo: { label: "Completo", className: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300" },
-  parcial: { label: "Parcial", className: "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300" },
-  solo_titulo: { label: "Solo título", className: "bg-zinc-200 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300" },
+const GREETING: ChatMessage = {
+  role: "assistant",
+  content: "¡Hola! Soy Tocorito ☕ Déjame darle un sorbo al café… Listo. ¿Qué estamos estudiando hoy?",
 };
 
-function formatDue(task: Task): string {
-  if (!task.due) return "Sin fecha";
-  const date = new Date(task.due.length === 10 ? `${task.due}T00:00:00` : task.due);
-  return date.toLocaleString("es", task.allDay ? { dateStyle: "medium" } : { dateStyle: "medium", timeStyle: "short" });
-}
+const SUGGESTIONS = ["Explícame las fracciones", "Ayúdame a organizar mi semana", "¿Cómo hago un buen resumen?"];
 
-export default function Home() {
-  const [url, setUrl] = useState("");
-  const [tasks, setTasks] = useState<Task[] | null>(null);
-  const [fieldsSeen, setFieldsSeen] = useState<string[]>([]);
+export default function Chat() {
+  const [messages, setMessages] = useState<ChatMessage[]>([GREETING]);
+  const [input, setInput] = useState("");
+  const [thinking, setThinking] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const bottomRef = useRef<HTMLDivElement>(null);
 
-  function show(result: { tasks: Task[]; fieldsSeen: string[] }) {
-    setTasks(result.tasks);
-    setFieldsSeen(result.fieldsSeen);
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, thinking]);
+
+  async function send(text: string) {
+    const content = text.trim();
+    if (!content || thinking) return;
+    const next = [...messages, { role: "user" as const, content }];
+    setMessages(next);
+    setInput("");
     setError(null);
-  }
-
-  async function loadFromUrl(e: React.FormEvent) {
-    e.preventDefault();
-    setLoading(true);
+    setThinking(true);
     try {
-      const res = await fetch("/api/calendar/preview", {
+      const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url }),
+        // El saludo es local; no hace falta mandarlo.
+        body: JSON.stringify({ messages: next.slice(1) }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Error al leer el feed.");
-      show(data);
+      if (!res.ok) throw new Error(data.error ?? "Tocorito no pudo responder.");
+      setMessages([...next, { role: "assistant", content: data.reply }]);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Error al leer el feed.");
+      setError(err instanceof Error ? err.message : "Tocorito no pudo responder.");
     } finally {
-      setLoading(false);
+      setThinking(false);
     }
   }
 
-  // El archivo se lee en el navegador: no sale de tu computadora.
-  async function loadFromFile(file: File) {
-    const events = parseIcs(await file.text());
-    if (events.length === 0) return setError("Ese archivo no tiene eventos de calendario.");
-    show({ tasks: eventsToTasks(events), fieldsSeen: [...new Set(events.flatMap((ev) => Object.keys(ev.raw)))].sort() });
-  }
-
   return (
-    <main className="mx-auto max-w-3xl px-4 py-10 font-sans">
-      <h1 className="text-2xl font-semibold">Inspector de calendario de Canvas</h1>
-      <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
-        En Canvas ve a <b>Calendario → Feed de calendario</b> y copia la URL. No guardamos nada: solo
-        mostramos qué información trae, y qué nivel de contexto tendría el tutor para cada tarea.
-      </p>
+    <div className="flex min-h-dvh flex-col bg-gradient-to-b from-[#0d3bb5] via-[#1450d8] to-[#2f6fef] font-sans text-[#0b1840]">
+      {/* Franja con los colores del tocororo: azul, blanco y rojo */}
+      <div className="flex h-1.5">
+        <div className="flex-1 bg-[#0b1840]" />
+        <div className="flex-1 bg-white" />
+        <div className="flex-1 bg-[#e5262b]" />
+      </div>
 
-      <form onSubmit={loadFromUrl} className="mt-6 flex flex-col gap-2 sm:flex-row">
-        <input
-          type="url"
-          required
-          value={url}
-          onChange={(e) => setUrl(e.target.value)}
-          placeholder="https://tu-escuela.instructure.com/feeds/calendars/user_….ics"
-          autoComplete="off"
-          className="flex-1 rounded-md border border-zinc-300 bg-transparent px-3 py-2 text-sm dark:border-zinc-700"
-        />
-        <button
-          disabled={loading}
-          className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900"
+      <header className="mx-auto flex w-full max-w-2xl items-center gap-3 px-4 pt-5 pb-3">
+        <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-full border-[3px] border-[#0b1840] bg-white shadow-lg">
+          <Image src="/tocoro.webp" alt="Tocorito" fill sizes="56px" className="object-contain p-0.5" priority />
+        </div>
+        <div className="flex-1">
+          <h1 className="text-xl font-extrabold tracking-tight text-white drop-shadow">Tocorito</h1>
+          <p className="text-sm text-blue-100">Tu tutor de estudio · {thinking ? "pensando… ☕" : "en línea"}</p>
+        </div>
+        <Link
+          href="/calendario"
+          className="rounded-full border-2 border-white/70 px-3 py-1 text-xs font-semibold text-white hover:bg-white/10"
         >
-          {loading ? "Leyendo…" : "Ver tareas"}
-        </button>
-      </form>
+          Calendario
+        </Link>
+      </header>
 
-      <label className="mt-3 block text-sm text-zinc-600 dark:text-zinc-400">
-        …o sube un archivo <code>.ics</code>:{" "}
-        <input
-          type="file"
-          accept=".ics,text/calendar"
-          onChange={(e) => e.target.files?.[0] && loadFromFile(e.target.files[0])}
-          className="text-sm"
-        />
-      </label>
+      <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col px-4 pb-4">
+        <div className="flex flex-1 flex-col gap-3 overflow-y-auto rounded-3xl border-[3px] border-[#0b1840] bg-[#fdf8ef] p-4 shadow-2xl">
+          {messages.map((m, i) => (
+            <Bubble key={i} message={m} />
+          ))}
+          {thinking && (
+            <div className="flex items-end gap-2">
+              <Avatar />
+              <div className="rounded-2xl rounded-bl-sm bg-[#1450d8] px-4 py-3 text-white">
+                <span className="inline-flex gap-1">
+                  <Dot delay="0ms" />
+                  <Dot delay="150ms" />
+                  <Dot delay="300ms" />
+                </span>
+              </div>
+            </div>
+          )}
+          {messages.length === 1 && !thinking && (
+            <div className="mt-2 flex flex-wrap gap-2">
+              {SUGGESTIONS.map((s) => (
+                <button
+                  key={s}
+                  onClick={() => send(s)}
+                  className="rounded-full border-2 border-[#1450d8] bg-white px-3 py-1.5 text-sm font-medium text-[#1450d8] hover:bg-[#1450d8] hover:text-white"
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          )}
+          {error && (
+            <p className="rounded-xl border-2 border-[#e5262b] bg-red-50 px-3 py-2 text-sm text-[#b81d21]">{error}</p>
+          )}
+          <div ref={bottomRef} />
+        </div>
 
-      {error && <p className="mt-4 rounded-md bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950/40 dark:text-red-300">{error}</p>}
-
-      {tasks && (
-        <section className="mt-8">
-          <h2 className="font-medium">{tasks.length} elementos encontrados</h2>
-          <p className="mt-1 text-xs text-zinc-500">Campos que trae el feed: {fieldsSeen.join(", ") || "ninguno"}</p>
-
-          <ul className="mt-4 divide-y divide-zinc-200 dark:divide-zinc-800">
-            {tasks.map((task) => (
-              <li key={task.id || task.title + task.due} className="py-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-medium">{task.title}</span>
-                  {task.course && <span className="text-xs text-zinc-500">{task.course}</span>}
-                  <span className={`rounded px-1.5 py-0.5 text-xs ${LEVEL_STYLE[task.contextLevel].className}`}>
-                    {LEVEL_STYLE[task.contextLevel].label}
-                  </span>
-                  <span className="text-xs text-zinc-500">{task.kind}</span>
-                </div>
-                <div className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">{formatDue(task)}</div>
-                {task.description && (
-                  <details className="mt-1 text-sm">
-                    <summary className="cursor-pointer text-zinc-500">Descripción ({task.description.length} caracteres)</summary>
-                    <p className="mt-1 whitespace-pre-wrap">{task.description}</p>
-                  </details>
-                )}
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-    </main>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            send(input);
+          }}
+          className="mt-3 flex gap-2"
+        >
+          <input
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            maxLength={2000}
+            placeholder="Pregúntale algo a Tocorito…"
+            className="flex-1 rounded-full border-[3px] border-[#0b1840] bg-white px-4 py-3 text-[15px] outline-none placeholder:text-slate-400 focus:border-[#f59e0b]"
+          />
+          <button
+            disabled={thinking || !input.trim()}
+            className="rounded-full border-[3px] border-[#0b1840] bg-[#e5262b] px-5 font-bold text-white shadow-md transition hover:bg-[#c81f24] disabled:opacity-50"
+          >
+            Enviar
+          </button>
+        </form>
+        <p className="mt-2 text-center text-xs text-blue-100">
+          Tocorito puede equivocarse. No compartas contraseñas ni datos personales.
+        </p>
+      </main>
+    </div>
   );
+}
+
+function Avatar() {
+  return (
+    <div className="relative h-8 w-8 shrink-0 overflow-hidden rounded-full border-2 border-[#0b1840] bg-white">
+      <Image src="/tocoro.webp" alt="" fill sizes="32px" className="object-contain" />
+    </div>
+  );
+}
+
+function Bubble({ message }: { message: ChatMessage }) {
+  if (message.role === "user") {
+    return (
+      <div className="flex justify-end">
+        <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-sm bg-[#e5262b] px-4 py-2.5 text-[15px] text-white shadow">
+          {message.content}
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="flex items-end gap-2">
+      <Avatar />
+      <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-bl-sm bg-[#1450d8] px-4 py-2.5 text-[15px] text-white shadow">
+        {message.content}
+      </div>
+    </div>
+  );
+}
+
+function Dot({ delay }: { delay: string }) {
+  return <span className="h-2 w-2 animate-bounce rounded-full bg-[#f59e0b]" style={{ animationDelay: delay }} />;
 }

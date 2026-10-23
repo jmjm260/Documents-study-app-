@@ -32,11 +32,13 @@
 - **Despliegue:** Railway (pendiente).
 - **Base de datos y auth:** sin decidir (candidata: Supabase). Hasta decidirlo, el MVP
   **no guarda** datos: el inspector procesa el feed y lo descarta.
-- **IA:** Claude API (pendiente; controlar costo por estudiante).
+- **IA:** OpenAI vía `fetch` desde el servidor (ADR 0002). Clave en `OPENAI_API_KEY`.
 
 ## Piezas implementadas
 
 - `web/src/lib/ics.ts` — parser de iCal sin dependencias (+ pruebas).
 - `web/src/lib/tasks.ts` — convierte eventos en tareas y asigna nivel de contexto.
 - `web/src/app/api/calendar/preview/route.ts` — descarga un feed de Canvas y lo devuelve parseado (no guarda nada).
-- `web/src/app/page.tsx` — inspector: pega tu URL de feed y ve qué datos trae.
+- `web/src/app/page.tsx` — chat con Tocorito (mascota y tutor).
+- `web/src/app/api/chat/route.ts` + `web/src/lib/chat.ts` — llamada a OpenAI, prompt y validación.
+- `web/src/app/calendario/page.tsx` — inspector: pega tu URL de feed y ve qué datos trae.
