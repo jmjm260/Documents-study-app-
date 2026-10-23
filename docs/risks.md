@@ -8,4 +8,4 @@
 | Grabaciones de clase | Leyes de consentimiento de grabación (uno o todos los participantes) | Fuera del MVP | aplazado |
 | Costo de IA por estudiante | Puede superar el precio de la suscripción | Medir tokens por sesión, límites por plan, caché de prompts | abierto: el chat aún no tiene límite por usuario; no publicar sin rate limit |
 | SSRF en `/api/calendar/preview` | El servidor descarga URLs que da el usuario | Ya validamos https, ruta de feed, IPs privadas y sin redirecciones. Falta: fijar la IP resuelta (DNS rebinding) antes de producción | mitigado parcialmente |
-| URL del feed iCal es secreta | Quien la tenga ve el calendario del estudiante | Tratarla como credencial: cifrada en BD, nunca en logs | abierto |
+| URL del feed iCal es secreta | Quien la tenga ve el calendario del estudiante | Tratarla como credencial: cifrada en BD, nunca en logs . Hoy se guarda en localStorage del navegador (solo pruebas); en la app irá a Keychain/Keystore | abierto |

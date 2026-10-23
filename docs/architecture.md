@@ -41,5 +41,6 @@
 - `web/src/app/api/calendar/preview/route.ts` — descarga un feed de Canvas y lo devuelve parseado (no guarda nada).
 - `web/src/app/page.tsx` — chat con Tocorito (mascota y tutor).
 - `web/src/app/api/chat/route.ts` + `web/src/lib/chat.ts` — llamada a OpenAI, prompt y validación.
-- `web/src/app/calendario/page.tsx` — inspector: pega tu URL de feed y ve qué datos trae.
+- `web/src/app/calendario/page.tsx` — calendario mensual (lunes a domingo) con agenda del día; se conecta pegando la URL del feed o subiendo un `.ics`.
+- `web/src/lib/calendar.ts` — cuadrícula del mes y tareas agrupadas por día (+ pruebas).
 - `web/src/components/TabBar.tsx` — barra de pestañas inferior (Tocorito / Calendario), estilo app móvil.
