@@ -89,3 +89,19 @@ describe("bloques de quitar mientras llegan", () => {
     expect(visibleReplies('Listo, quitado.\n[[QUITAR]]{"id":"ab')).toEqual(["Listo, quitado."]);
   });
 });
+
+describe("errores de Claude local con mensaje claro", async () => {
+  const { friendlyClaudeError } = await import("./ai/claude-local");
+  it("límite de uso de la cuenta", () => {
+    expect(friendlyClaudeError("Claude AI usage limit reached|1761300000")).toMatch(/límite de uso/);
+  });
+  it("sesión cerrada", () => {
+    expect(friendlyClaudeError("Not logged in · Please run /login")).toMatch(/sesión/);
+  });
+  it("saturado", () => {
+    expect(friendlyClaudeError("API Error: 529 Overloaded")).toMatch(/saturado/);
+  });
+  it("otro error", () => {
+    expect(friendlyClaudeError("algo raro")).toMatch(/no pudo responder/);
+  });
+});

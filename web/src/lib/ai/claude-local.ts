@@ -135,6 +135,23 @@ function takeProcess(level: ReasoningLevel, system: string): Promise<Warm> {
 
 process.once("exit", () => pool.forEach((w) => w.child.kill()));
 
+/**
+ * Mensaje claro según el error de Claude Code. Ojo: en pruebas Tocorito usa TU cuenta de Claude,
+ * así que si se acaba tu límite de uso, Tocorito tampoco puede responder hasta que se renueve.
+ */
+export function friendlyClaudeError(detail: string): string {
+  if (/not logged in|please run \/login|auth/i.test(detail)) {
+    return "Claude no tiene la sesión iniciada. Ejecuta `claude auth login` en una terminal.";
+  }
+  if (/usage limit|limit reached|rate.?limit|quota|429|too many requests|reset/i.test(detail)) {
+    return "Se acabó por ahora el límite de uso de tu cuenta de Claude (en pruebas Tocorito usa tu cuenta). Vuelve a intentarlo cuando se renueve.";
+  }
+  if (/overloaded|529|503|capacity/i.test(detail)) {
+    return "Claude está saturado en este momento. Inténtalo de nuevo en unos segundos.";
+  }
+  return "Tocorito (Claude local) no pudo responder. Inténtalo de nuevo.";
+}
+
 export function createClaudeLocalProvider(): ChatProvider {
   return {
     id: "claude-local",
@@ -142,69 +159,76 @@ export function createClaudeLocalProvider(): ChatProvider {
       return (["instant", "medium", "high"] as const).map((level) => ({ level, model: claudeReasoningConfig(level).model, realReasoning: true }));
     },
     async *stream(req: ChatRequest): AsyncGenerator<ProviderEvent> {
-      const proc = await takeProcess(req.level, req.system);
-      // Mientras respondemos, ya arrancamos el siguiente proceso de este nivel.
-      prewarm(req.level, req.system);
+      // Si el proceso pre-calentado murió mientras esperaba (p. ej. tras un límite de uso),
+      // lo intentamos una vez más con uno nuevo antes de rendirnos.
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const proc = attempt === 0 ? await takeProcess(req.level, req.system) : await startProcess(req.level, req.system);
+        // Mientras respondemos, ya arrancamos el siguiente proceso de este nivel.
+        prewarm(req.level, req.system);
 
-      const message = { type: "user", message: { role: "user", content: userContent(req.messages, req.context) } };
-      proc.child.stdin?.write(JSON.stringify(message) + "\n");
+        const message = { type: "user", message: { role: "user", content: userContent(req.messages, req.context) } };
+        proc.child.stdin?.write(JSON.stringify(message) + "\n");
 
-      const deadline = Date.now() + TIMEOUT_MS;
-      let generating = false;
-      try {
-        for (;;) {
-          if (!proc.lines.length) {
-            if (proc.exited) throw new ProviderError("Tocorito (Claude local) no pudo responder. Inténtalo de nuevo.", proc.stderr || "el proceso terminó");
-            if (Date.now() > deadline) throw new ProviderError("Tocorito tardó demasiado. Inténtalo de nuevo.", "timeout");
-            await new Promise<void>((r) => {
-              proc.waiters.push(r);
-              setTimeout(r, 1000);
-            });
-            continue;
-          }
-          let ev: {
-            type?: string;
-            event?: { type?: string; content_block?: { type?: string }; delta?: { type?: string; text?: string } };
-            is_error?: boolean;
-            result?: string;
-            usage?: { input_tokens?: number; output_tokens?: number };
-          };
-          try {
-            ev = JSON.parse(proc.lines.shift()!);
-          } catch {
-            continue;
-          }
-          if (ev.type === "stream_event") {
-            const e = ev.event;
-            if (e?.type === "content_block_start" && e.content_block?.type === "thinking") yield { type: "status", status: "thinking" };
-            if (e?.type === "content_block_delta" && e.delta?.type === "text_delta" && e.delta.text) {
-              if (!generating) {
-                generating = true;
+        const deadline = Date.now() + TIMEOUT_MS;
+        let generating = false;
+        let gotOutput = false;
+        try {
+          for (;;) {
+            if (!proc.lines.length) {
+              if (proc.exited) {
+                if (!gotOutput && attempt === 0) break; // reintentar con un proceso nuevo
+                throw new ProviderError(friendlyClaudeError(proc.stderr), proc.stderr || "el proceso terminó");
+              }
+              if (Date.now() > deadline) throw new ProviderError("Tocorito tardó demasiado. Inténtalo de nuevo.", "timeout");
+              await new Promise<void>((r) => {
+                proc.waiters.push(r);
+                setTimeout(r, 1000);
+              });
+              continue;
+            }
+            gotOutput = true;
+            let ev: {
+              type?: string;
+              event?: { type?: string; content_block?: { type?: string }; delta?: { type?: string; text?: string } };
+              is_error?: boolean;
+              result?: string;
+              usage?: { input_tokens?: number; output_tokens?: number };
+            };
+            try {
+              ev = JSON.parse(proc.lines.shift()!);
+            } catch {
+              continue;
+            }
+            if (ev.type === "stream_event") {
+              const e = ev.event;
+              if (e?.type === "content_block_start" && e.content_block?.type === "thinking") yield { type: "status", status: "thinking" };
+              if (e?.type === "content_block_delta" && e.delta?.type === "text_delta" && e.delta.text) {
+                if (!generating) {
+                  generating = true;
+                  yield { type: "status", status: "generating" };
+                }
+                yield { type: "text", delta: e.delta.text };
+              }
+            } else if (ev.type === "result") {
+              if (ev.is_error) {
+                const detail = ev.result ?? "error desconocido";
+                throw new ProviderError(friendlyClaudeError(detail), detail);
+              }
+              // Si no hubo texto en streaming (raro), mandamos el resultado completo.
+              if (!generating && ev.result) {
                 yield { type: "status", status: "generating" };
+                yield { type: "text", delta: ev.result };
               }
-              yield { type: "text", delta: e.delta.text };
+              yield { type: "usage", inputTokens: ev.usage?.input_tokens ?? null, outputTokens: ev.usage?.output_tokens ?? null };
+              return;
             }
-          } else if (ev.type === "result") {
-            if (ev.is_error) {
-              const detail = ev.result ?? "error desconocido";
-              if (/not logged in|login/i.test(detail)) {
-                throw new ProviderError("Claude no tiene la sesión iniciada. Ejecuta `claude auth login` en una terminal.", detail);
-              }
-              throw new ProviderError("Tocorito (Claude local) no pudo responder. Inténtalo de nuevo.", detail);
-            }
-            // Si no hubo texto en streaming (raro), mandamos el resultado completo.
-            if (!generating && ev.result) {
-              yield { type: "status", status: "generating" };
-              yield { type: "text", delta: ev.result };
-            }
-            yield { type: "usage", inputTokens: ev.usage?.input_tokens ?? null, outputTokens: ev.usage?.output_tokens ?? null };
-            return;
           }
+        } finally {
+          proc.child.stdin?.end();
+          setTimeout(() => !proc.exited && proc.child.kill(), 5000);
         }
-      } finally {
-        proc.child.stdin?.end();
-        setTimeout(() => !proc.exited && proc.child.kill(), 5000);
       }
+      throw new ProviderError("Tocorito (Claude local) no pudo responder. Inténtalo de nuevo.", "dos intentos fallidos");
     },
   };
 }
