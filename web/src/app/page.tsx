@@ -65,7 +65,7 @@ export default function Chat() {
         <div className="flex-1 bg-[#e5262b]" />
       </div>
 
-      <header className="mx-auto flex w-full max-w-2xl items-center gap-3 px-4 pt-5 pb-3">
+      <header className="flex w-full items-center gap-3 px-4 py-3 sm:px-6">
         <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-full border-[3px] border-[#0b1840] bg-white shadow-lg">
           <Image src="/tocoro.webp" alt="Tocorito" fill sizes="56px" className="object-contain p-0.5" priority />
         </div>
@@ -81,8 +81,8 @@ export default function Chat() {
         </Link>
       </header>
 
-      <main className="mx-auto flex min-h-0 w-full max-w-2xl flex-1 flex-col px-4 pb-4">
-        <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto rounded-3xl border-[3px] border-[#0b1840] bg-[#fdf8ef] p-4 shadow-2xl">
+      <main className="flex min-h-0 w-full flex-1 flex-col pb-2">
+        <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto border-y-[3px] border-[#0b1840] bg-[#fdf8ef] px-4 py-4 sm:px-6">
           {messages.map((m, i) => (
             <Bubble key={i} message={m} />
           ))}
@@ -122,7 +122,7 @@ export default function Chat() {
             e.preventDefault();
             send(input);
           }}
-          className="mt-3 flex gap-2"
+          className="flex gap-2 px-4 pt-3 sm:px-6"
         >
           <input
             value={input}
@@ -158,7 +158,7 @@ function Bubble({ message }: { message: ChatMessage }) {
   if (message.role === "user") {
     return (
       <div className="flex justify-end">
-        <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-sm bg-[#e5262b] px-4 py-2.5 text-[15px] text-white shadow">
+        <div className="max-w-[85%] sm:max-w-[70%] whitespace-pre-wrap rounded-2xl rounded-br-sm bg-[#e5262b] px-4 py-2.5 text-[15px] text-white shadow">
           {message.content}
         </div>
       </div>
@@ -167,7 +167,7 @@ function Bubble({ message }: { message: ChatMessage }) {
   return (
     <div className="flex items-end gap-2">
       <Avatar />
-      <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-bl-sm bg-[#1450d8] px-4 py-2.5 text-[15px] text-white shadow">
+      <div className="max-w-[85%] sm:max-w-[70%] whitespace-pre-wrap rounded-2xl rounded-bl-sm bg-[#1450d8] px-4 py-2.5 text-[15px] text-white shadow">
         <RichText text={message.content} />
       </div>
     </div>
