@@ -1,7 +1,6 @@
 "use client";
 
 import Image from "next/image";
-import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import RichText from "@/components/RichText";
 import type { ChatMessage } from "@/lib/chat";
@@ -57,7 +56,7 @@ export default function Chat() {
   }
 
   return (
-    <div className="flex h-dvh flex-col bg-gradient-to-b from-[#0d3bb5] via-[#1450d8] to-[#2f6fef] font-sans text-[#0b1840]">
+    <div className="flex h-full flex-col bg-gradient-to-b from-[#0d3bb5] via-[#1450d8] to-[#2f6fef] font-sans text-[#0b1840]">
       {/* Franja con los colores del tocororo: azul, blanco y rojo */}
       <div className="flex h-1.5">
         <div className="flex-1 bg-[#0b1840]" />
@@ -65,7 +64,7 @@ export default function Chat() {
         <div className="flex-1 bg-[#e5262b]" />
       </div>
 
-      <header className="flex w-full items-center gap-3 px-4 py-3 sm:px-6">
+      <header className="flex w-full items-center gap-3 px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] sm:px-6">
         <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-full border-[3px] border-[#0b1840] bg-white shadow-lg">
           <Image src="/tocoro.webp" alt="Tocorito" fill sizes="56px" className="object-contain p-0.5" priority />
         </div>
@@ -73,12 +72,6 @@ export default function Chat() {
           <h1 className="text-xl font-extrabold tracking-tight text-white drop-shadow">Tocorito</h1>
           <p className="text-sm text-blue-100">Tu tutor de estudio · {thinking ? "pensando… ☕" : "en línea"}</p>
         </div>
-        <Link
-          href="/calendario"
-          className="rounded-full border-2 border-white/70 px-3 py-1 text-xs font-semibold text-white hover:bg-white/10"
-        >
-          Calendario
-        </Link>
       </header>
 
       <main className="flex min-h-0 w-full flex-1 flex-col pb-2">

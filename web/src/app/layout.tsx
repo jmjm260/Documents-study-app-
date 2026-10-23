@@ -1,5 +1,6 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import TabBar from "@/components/TabBar";
 import "katex/dist/katex.min.css";
 import "./globals.css";
 
@@ -18,6 +19,14 @@ export const metadata: Metadata = {
   description: "Asistente de estudio con IA",
 };
 
+// Pensado para móvil: ocupa toda la pantalla (también bajo el notch) y colorea la barra del sistema.
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: "#0d3bb5",
+};
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -25,10 +34,12 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="es">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
-        {children}
+      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+        {/* Estructura de app: pantalla arriba, barra de pestañas fija abajo */}
+        <div className="flex h-dvh flex-col overflow-hidden">
+          <div className="min-h-0 flex-1">{children}</div>
+          <TabBar />
+        </div>
       </body>
     </html>
   );

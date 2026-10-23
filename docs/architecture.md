@@ -42,3 +42,4 @@
 - `web/src/app/page.tsx` — chat con Tocorito (mascota y tutor).
 - `web/src/app/api/chat/route.ts` + `web/src/lib/chat.ts` — llamada a OpenAI, prompt y validación.
 - `web/src/app/calendario/page.tsx` — inspector: pega tu URL de feed y ve qué datos trae.
+- `web/src/components/TabBar.tsx` — barra de pestañas inferior (Tocorito / Calendario), estilo app móvil.

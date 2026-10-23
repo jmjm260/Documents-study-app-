@@ -4,6 +4,12 @@ Asistente de estudio con IA para adolescentes (13+) y adultos: secundaria y univ
 directo al estudiante (sin contratos con escuelas). Plataformas: web primero, luego
 iOS/Android.
 
+**Objetivo final: una app publicada en la App Store (y Google Play).** La web actual es solo
+para probar. Cada decisión debe pensarse para móvil primero: navegación con barra de pestañas
+inferior, botones táctiles de 44px mínimo, respetar las zonas seguras (notch, barra de inicio),
+nada que dependa de pasar el ratón por encima, y código que se pueda reutilizar al empaquetar la
+app (p. ej. con Capacitor o React Native). Si algo solo funciona en web, dilo.
+
 El dueño del proyecto está aprendiendo arquitectura (viene de C++ y Arduino):
 explica las decisiones en español, con frases cortas, y prefiere siempre la
 solución más simple que funcione.
