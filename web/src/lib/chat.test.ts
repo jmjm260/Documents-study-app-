@@ -34,8 +34,8 @@ describe("splitReply", () => {
     expect(splitReply("Hola asere ☕\n|||\n¿Qué estudiamos?")).toEqual(["Hola asere ☕", "¿Qué estudiamos?"]);
   });
 
-  it("no parte por ||| dentro de una frase", () => {
-    expect(splitReply("a ||| b")).toEqual(["a ||| b"]);
+  it("también parte si ||| viene en la misma línea (algunos modelos lo escriben así)", () => {
+    expect(splitReply("Hola ☕ ||| Es el proceso… |||¿Seguimos?")).toEqual(["Hola ☕", "Es el proceso…", "¿Seguimos?"]);
   });
 
   it("como máximo 3 mensajes: lo que sobra se une al último", () => {

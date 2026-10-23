@@ -5,7 +5,12 @@ import { useEffect, useRef, useState } from "react";
 import ActionCard from "@/components/chat/ActionCard";
 import RichText from "@/components/RichText";
 import { dayKey } from "@/lib/calendar";
+import LevelPicker from "@/components/chat/LevelPicker";
+import { DEFAULT_REASONING_LEVEL, REASONING_LEVELS, type ReasoningLevel } from "@/lib/ai/reasoning";
+import type { ChatStatus } from "@/lib/ai/types";
 import { MAX_CHARS, type ChatMessage } from "@/lib/chat";
+import { loadPrefs, savePrefs } from "@/lib/prefs";
+import { visibleReplies } from "@/lib/stream-text";
 import { actionNote, MAX_CONTEXT_ITEMS, type ChatContext } from "@/lib/chat-actions";
 import { addEntries, KIND_INFO, loadCanvasCache, loadEntries, removeEntry, toCalendarItems, type Entry, type EntryDraft } from "@/lib/entries";
 
@@ -42,17 +47,61 @@ const SUGGESTIONS = [
   { title: "¿Qué tengo pendiente?", text: "¿Qué tengo pendiente esta semana?" },
 ];
 
+const STATUS_LABEL: Record<ChatStatus, string> = {
+  preparing: "Preparando…",
+  thinking: "Pensando…",
+  generating: "Generando respuesta…",
+};
+
+/** Lee la respuesta en streaming de /api/chat (una línea JSON por evento). */
+async function* readEvents(res: Response): AsyncGenerator<Record<string, unknown>> {
+  const reader = res.body!.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let nl;
+    while ((nl = buffer.indexOf("\n")) >= 0) {
+      const line = buffer.slice(0, nl).trim();
+      buffer = buffer.slice(nl + 1);
+      if (line) yield JSON.parse(line);
+    }
+  }
+}
+
 export default function Chat() {
   const [messages, setMessages] = useState<UiMessage[]>([]);
   const [input, setInput] = useState("");
   const [thinking, setThinking] = useState(false);
+  const [status, setStatus] = useState<ChatStatus>("preparing");
+  // Burbujas que se van escribiendo mientras llega la respuesta.
+  const [live, setLive] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
+  // Nivel de esta conversación (si no se cambia, el predeterminado del usuario).
+  const [defaultLevel, setDefaultLevel] = useState<ReasoningLevel>(DEFAULT_REASONING_LEVEL);
+  const [level, setLevel] = useState<ReasoningLevel>(DEFAULT_REASONING_LEVEL);
+  const [levels, setLevels] = useState<{ level: ReasoningLevel; realReasoning: boolean }[]>(
+    REASONING_LEVELS.map((l) => ({ level: l, realReasoning: true }))
+  );
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [messages, thinking, error]);
+  }, [messages, thinking, error, live]);
+
+  // Preferencia guardada + qué niveles ofrece el servidor (esto también "despierta" a Tocorito).
+  useEffect(() => {
+    const saved = loadPrefs().defaultReasoningLevel;
+    setDefaultLevel(saved);
+    setLevel(saved);
+    fetch("/api/chat/levels")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => data?.levels && setLevels(data.levels))
+      .catch(() => {});
+  }, []);
 
   // El cuadro de texto crece con el contenido (hasta ~5 líneas).
   useEffect(() => {
@@ -70,33 +119,46 @@ export default function Chat() {
     setInput("");
     setError(null);
     setThinking(true);
+    setStatus("preparing");
+    setLive([]);
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: toHistory(next), context: calendarContext() }),
+        body: JSON.stringify({ messages: toHistory(next), context: calendarContext(), reasoningLevel: level }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Tocorito no pudo responder.");
-      // Tocorito puede mandar varios mensajes cortos: los mostramos uno a uno, como en un chat.
-      const replies: string[] = data.replies ?? [];
-      let shown = next;
-      for (const [i, reply] of replies.entries()) {
-        if (i > 0) await new Promise((r) => setTimeout(r, 900));
-        shown = [...shown, { role: "assistant", content: reply }];
-        setMessages(shown);
+      if (!res.ok || !res.body) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? "Tocorito no pudo responder.");
       }
-      // Lo que Tocorito anotó en el calendario: lo guardamos y enseñamos una tarjeta por cada cosa.
-      const actions: EntryDraft[] = data.actions ?? [];
-      if (actions.length) {
-        const created = addEntries(actions);
-        setMessages([...shown, ...created.map((entry) => ({ role: "action" as const, entry, undone: false }))]);
+      let raw = "";
+      for await (const ev of readEvents(res)) {
+        if (ev.type === "status") setStatus(ev.status as ChatStatus);
+        else if (ev.type === "text") {
+          raw += ev.delta as string;
+          setLive(visibleReplies(raw));
+        } else if (ev.type === "error") {
+          throw new Error((ev.error as string) ?? "Tocorito no pudo responder.");
+        } else if (ev.type === "done") {
+          // Versión final limpia (sin bloques de calendario) + tarjetas de lo que anotó.
+          const replies = (ev.replies as string[]).map((content) => ({ role: "assistant" as const, content }));
+          const actions = (ev.actions as EntryDraft[]) ?? [];
+          const created = actions.length ? addEntries(actions) : [];
+          setMessages([...next, ...replies, ...created.map((entry) => ({ role: "action" as const, entry, undone: false }))]);
+          setLive([]);
+        }
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Tocorito no pudo responder.");
+      setLive([]);
     } finally {
       setThinking(false);
     }
+  }
+
+  function makeDefault() {
+    savePrefs({ defaultReasoningLevel: level });
+    setDefaultLevel(level);
   }
 
   function undo(id: string) {
@@ -109,9 +171,12 @@ export default function Chat() {
     setMessages([]);
     setError(null);
     setInput("");
+    setLevel(defaultLevel);
   }
 
   const empty = messages.length === 0 && !thinking;
+  // Lo ya recibido + lo que se está escribiendo ahora mismo.
+  const shown: UiMessage[] = [...messages, ...live.map((content) => ({ role: "assistant" as const, content }))];
 
   return (
     <div className="flex h-full flex-col bg-white font-sans text-[#0b1840]">
@@ -128,7 +193,7 @@ export default function Chat() {
             <h1 className="text-[17px] font-extrabold leading-tight tracking-tight">Tocorito</h1>
             <p className="flex items-center gap-1.5 text-xs text-slate-500">
               <span className={`h-1.5 w-1.5 rounded-full ${thinking ? "animate-pulse bg-[#f59e0b]" : "bg-emerald-500"}`} />
-              {thinking ? "Escribiendo…" : "Tu tutor de estudio"}
+              {thinking ? STATUS_LABEL[status] : "Tu tutor de estudio"}
             </p>
           </div>
           {messages.length > 0 && (
@@ -153,17 +218,18 @@ export default function Chat() {
             <Welcome onPick={send} />
           ) : (
             <div className="flex flex-col">
-              {messages.map((m, i) => {
+              {shown.map((m, i) => {
                 if (m.role === "action") {
                   return <ActionCard key={m.entry.id} entry={m.entry} undone={m.undone} onUndo={() => undo(m.entry.id)} />;
                 }
-                const prev = messages[i - 1];
-                const nextMsg = messages[i + 1];
+                const prev = shown[i - 1];
+                const nextMsg = shown[i + 1];
                 const firstOfGroup = prev?.role !== m.role;
-                const lastOfGroup = nextMsg?.role !== m.role && !(m.role === "assistant" && thinking && i === messages.length - 1);
+                const lastOfGroup = nextMsg?.role !== m.role;
                 return <Bubble key={i} message={m} firstOfGroup={firstOfGroup} lastOfGroup={lastOfGroup} />;
               })}
-              {thinking && <Typing grouped={messages.at(-1)?.role === "assistant"} />}
+              {/* Mientras no llega texto: "Preparando… / Pensando…" (nunca el razonamiento interno). */}
+              {thinking && live.length === 0 && <Typing label={STATUS_LABEL[status]} grouped={shown.at(-1)?.role === "assistant"} />}
               {error && (
                 <div className="mt-4 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-[#b81d21]">
                   <span aria-hidden>⚠️</span>
@@ -176,7 +242,16 @@ export default function Chat() {
         </div>
       </main>
 
-      <footer className="shrink-0 border-t border-slate-200 bg-white px-4 pb-2 pt-3 sm:px-6">
+      <footer className="shrink-0 border-t border-slate-200 bg-white px-4 pb-2 pt-2.5 sm:px-6">
+        <LevelPicker
+          value={level}
+          defaultLevel={defaultLevel}
+          available={levels.map((l) => l.level)}
+          noRealReasoning={levels.filter((l) => !l.realReasoning).map((l) => l.level)}
+          disabled={thinking}
+          onChange={setLevel}
+          onMakeDefault={makeDefault}
+        />
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -283,16 +358,19 @@ function Bubble({ message, firstOfGroup, lastOfGroup }: { message: ChatMessage; 
   );
 }
 
-function Typing({ grouped }: { grouped: boolean }) {
+function Typing({ grouped, label }: { grouped: boolean; label: string }) {
   return (
-    <div className={`flex items-end gap-2 ${grouped ? "mt-1" : "mt-4"}`} aria-label="Tocorito está escribiendo">
+    <div className={`flex items-end gap-2 ${grouped ? "mt-1" : "mt-4"}`} role="status" aria-label={label}>
       <div className="w-7 shrink-0">
         <Avatar size={28} />
       </div>
-      <div className="flex gap-1 rounded-[20px] rounded-bl-md border border-slate-200 bg-white px-4 py-3.5">
-        {[0, 150, 300].map((d) => (
-          <span key={d} className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#1450d8]/60" style={{ animationDelay: `${d}ms` }} />
-        ))}
+      <div className="flex items-center gap-2 rounded-[20px] rounded-bl-md border border-slate-200 bg-white px-4 py-2.5">
+        <span className="flex gap-1">
+          {[0, 150, 300].map((d) => (
+            <span key={d} className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#1450d8]/60" style={{ animationDelay: `${d}ms` }} />
+          ))}
+        </span>
+        <span className="text-xs font-medium text-slate-500">{label}</span>
       </div>
     </div>
   );

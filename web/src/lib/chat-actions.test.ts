@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { actionNote, calendarPrompt, extractActions, MAX_ACTIONS, validateContext } from "./chat-actions";
+import { actionNote, calendarData, extractActions, MAX_ACTIONS, validateContext } from "./chat-actions";
 
 const block = (o: object) => `[[CALENDARIO]]${JSON.stringify(o)}[[/CALENDARIO]]`;
 const exam = { tipo: "examen", titulo: "Prueba de física", fecha: "2026-10-28", hora: "09:30", materia: "FIS 210", notas: "", recordatorio_min: 30 };
@@ -69,9 +69,9 @@ describe("validateContext", () => {
   });
 });
 
-describe("calendarPrompt", () => {
+describe("calendarData", () => {
   it("le dice a Tocorito qué día es y cómo se llaman los próximos días", () => {
-    const p = calendarPrompt({ now: "2026-10-23T14:05", timezone: "America/New_York", upcoming: [] });
+    const p = calendarData({ now: "2026-10-23T14:05", timezone: "America/New_York", upcoming: [] });
     expect(p).toContain("viernes 23 de octubre de 2026, 14:05");
     expect(p).toContain("jueves 29 de octubre = 2026-10-29");
     expect(p).toContain("(nada anotado)");

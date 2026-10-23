@@ -1,54 +1,85 @@
-// POST /api/chat  { messages, context? }  →  { replies: string[], actions: EntryDraft[] }
-// - replies: Tocorito puede mandar varios mensajes cortos.
-// - actions: lo que Tocorito quiere anotar en el calendario (ya validado); el navegador lo guarda.
-// Las claves viven solo en el servidor (variables de entorno), nunca en el navegador.
+// POST /api/chat  { messages, context?, reasoningLevel? }
+// Responde en streaming (NDJSON: un objeto JSON por línea):
+//   {"type":"status","status":"preparing"|"thinking"|"generating"}
+//   {"type":"text","delta":"..."}                      ← texto en bruto, según llega
+//   {"type":"done","replies":[...],"actions":[...],"level":"medium"}   ← versión final limpia
+//   {"type":"error","error":"..."}
+// El navegador solo manda el NIVEL (instant/medium/high); el servidor decide modelo y parámetros.
 // No registramos el contenido de los mensajes ni del calendario.
-//
-// CHAT_PROVIDER elige quién responde:
-//   "openai" (por defecto) → API de OpenAI con OPENAI_API_KEY
-//   "claude"               → Claude Code local, solo para pruebas en tu computadora
 import { NextResponse } from "next/server";
-import { askTocorito, ChatInputError, OpenAIError, splitReply, TOCORITO_PROMPT, validateMessages } from "@/lib/chat";
-import { calendarPrompt, extractActions, validateContext } from "@/lib/chat-actions";
-import { askTocoritoLocal, ClaudeLocalError } from "@/lib/claude-local";
+import { prewarmAll } from "@/lib/ai/claude-local";
+import { getProvider, providerId } from "@/lib/ai/providers";
+import { resolveLevel } from "@/lib/ai/reasoning";
+import { ProviderError } from "@/lib/ai/types";
+import { recordUsage } from "@/lib/ai/usage";
+import { TOCORITO_SYSTEM as SYSTEM } from "@/lib/ai/system";
+import { ChatInputError, splitReply, validateMessages } from "@/lib/chat";
+import { calendarData, extractActions, validateContext } from "@/lib/chat-actions";
 
 export const runtime = "nodejs";
 
+// Con Claude local, dejamos los procesos listos en cuanto se carga la API.
+if (providerId() === "claude-local" && process.env.NODE_ENV !== "production") prewarmAll(SYSTEM);
+
 export async function POST(request: Request) {
-  const provider = process.env.CHAT_PROVIDER === "claude" ? "claude" : "openai";
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (provider === "openai" && !apiKey) {
-    return NextResponse.json(
-      { error: "Falta OPENAI_API_KEY en web/.env.local. Tocorito no puede responder sin ella." },
-      { status: 500 }
-    );
-  }
-  if (provider === "claude" && process.env.NODE_ENV === "production") {
-    return NextResponse.json({ error: "Claude local solo está disponible en desarrollo." }, { status: 500 });
-  }
+  const body = (await request.json().catch(() => null)) as { messages?: unknown; context?: unknown; reasoningLevel?: unknown } | null;
 
-  const body = (await request.json().catch(() => null)) as { messages?: unknown; context?: unknown } | null;
+  let messages;
+  let provider;
   try {
-    const messages = validateMessages(body?.messages);
-    const context = validateContext(body?.context);
-    const system = context ? `${TOCORITO_PROMPT}\n${calendarPrompt(context)}` : TOCORITO_PROMPT;
-
-    const raw =
-      provider === "claude"
-        ? await askTocoritoLocal(messages, system)
-        : await askTocorito(messages, apiKey!, process.env.OPENAI_MODEL || "gpt-4.1-mini", system);
-
-    // Sin contexto no hay acceso al calendario: ignoramos cualquier bloque.
-    const { text, actions } = extractActions(raw);
-    const replies = text ? splitReply(text) : ["Listo, anotado ☕"];
-    return NextResponse.json({ replies, actions: context ? actions : [] });
+    messages = validateMessages(body?.messages);
+    provider = getProvider();
   } catch (err) {
     if (err instanceof ChatInputError) return NextResponse.json({ error: err.message }, { status: 400 });
-    console.error(`chat (${provider}): fallo:`, err instanceof Error ? err.message : "desconocido");
-    const message =
-      err instanceof OpenAIError || err instanceof ClaudeLocalError
-        ? err.friendly
-        : "Tocorito no pudo responder ahora. Inténtalo de nuevo.";
-    return NextResponse.json({ error: message }, { status: 502 });
+    if (err instanceof ProviderError) return NextResponse.json({ error: err.friendly }, { status: 500 });
+    throw err;
   }
+  const context = validateContext(body?.context);
+  // Aquí se aplicará el plan del usuario cuando haya cuentas (allowedLevels por plan).
+  const level = resolveLevel(body?.reasoningLevel);
+
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream({
+    async start(controller) {
+      const send = (obj: object) => controller.enqueue(encoder.encode(JSON.stringify(obj) + "\n"));
+      const started = Date.now();
+      let firstTokenMs: number | null = null;
+      let raw = "";
+      let usage = { inputTokens: null as number | null, outputTokens: null as number | null };
+      try {
+        send({ type: "status", status: "preparing" });
+        for await (const ev of provider.stream({
+          system: SYSTEM,
+          context: context ? calendarData(context) : "",
+          messages,
+          level,
+          signal: request.signal,
+        })) {
+          if (ev.type === "text") {
+            firstTokenMs ??= Date.now() - started;
+            raw += ev.delta;
+            send(ev);
+          } else if (ev.type === "status") {
+            send(ev);
+          } else if (ev.type === "usage") {
+            usage = { inputTokens: ev.inputTokens, outputTokens: ev.outputTokens };
+          }
+        }
+        // Sin contexto no hay acceso al calendario: ignoramos cualquier bloque.
+        const { text, actions } = extractActions(raw);
+        const replies = text ? splitReply(text) : ["Listo, anotado ☕"];
+        send({ type: "done", replies, actions: context ? actions : [], level });
+        recordUsage({ provider: provider.id, level, ...usage, firstTokenMs, totalMs: Date.now() - started });
+      } catch (err) {
+        console.error(`chat (${provider.id}, ${level}): fallo:`, err instanceof Error ? err.message : "desconocido");
+        send({ type: "error", error: err instanceof ProviderError ? err.friendly : "Tocorito no pudo responder ahora. Inténtalo de nuevo." });
+      } finally {
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(stream, {
+    headers: { "Content-Type": "application/x-ndjson; charset=utf-8", "Cache-Control": "no-store", "X-Accel-Buffering": "no" },
+  });
 }

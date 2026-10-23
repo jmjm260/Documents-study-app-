@@ -32,7 +32,7 @@
 - **Despliegue:** Railway (pendiente).
 - **Base de datos y auth:** sin decidir (candidata: Supabase). Hasta decidirlo, el MVP
   **no guarda** datos: el inspector procesa el feed y lo descarta.
-- **IA:** OpenAI vía `fetch` desde el servidor (ADR 0002). Clave en `OPENAI_API_KEY`.
+- **IA:** capa `web/src/lib/ai/` con proveedores intercambiables (OpenAI o Claude local en pruebas), niveles de razonamiento y streaming (ADR 0002 y 0004).
 
 ## Piezas implementadas
 
@@ -49,4 +49,6 @@
 - `web/src/lib/chat-actions.ts` — Tocorito lee el calendario y anota cosas con bloques [[CALENDARIO]] (ADR 0003, + pruebas).
 - `web/src/lib/reminders.ts` + `web/src/components/ReminderCenter.tsx` — recordatorios (aviso en la app + notificación del sistema; en web solo con la app abierta).
 - `web/src/components/chat/ActionCard.tsx` — tarjeta en el chat de lo que Tocorito anotó, con Deshacer.
+- `web/src/lib/ai/` — capa de IA: niveles de razonamiento, proveedores (OpenAI, Claude local pre-calentado), streaming y uso (ADR 0004).
+- `web/src/components/chat/LevelPicker.tsx` — selector ⚡ Instantáneo / 🧠 Medio / 🧠🧠 Alto.
 - `web/src/components/TabBar.tsx` — barra de pestañas inferior (Tocorito / Calendario), estilo app móvil.

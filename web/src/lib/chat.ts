@@ -1,5 +1,5 @@
-// Lógica del chat con Tocorito (el tocororo de la app). Sin dependencias:
-// llamamos a la API de OpenAI con fetch para no añadir un SDK.
+// Personalidad de Tocorito, validación de mensajes y reparto en burbujas.
+// Las llamadas a la IA viven en src/lib/ai/ (un archivo por proveedor).
 
 export type ChatMessage = { role: "user" | "assistant"; content: string };
 
@@ -10,10 +10,13 @@ export const MAX_CHARS = 2000;
 export const SPLIT_MARK = "|||";
 const MAX_PARTS = 3;
 
-/** "hola\n|||\n¿qué estudiamos?" → ["hola", "¿qué estudiamos?"]. Lo que sobre se une al último. */
+/**
+ * "hola\n|||\n¿qué estudiamos?" → ["hola", "¿qué estudiamos?"]. También acepta "hola ||| ¿qué…?"
+ * en la misma línea, porque los modelos rápidos a veces lo escriben así. Lo que sobre se une al último.
+ */
 export function splitReply(text: string): string[] {
   const parts = text
-    .split(/^\s*\|\|\|\s*$/m)
+    .split(/\s*\|{3,}\s*/)
     .map((p) => p.trim())
     .filter(Boolean);
   if (parts.length <= MAX_PARTS) return parts.length ? parts : [text.trim()];
@@ -77,21 +80,6 @@ Cómo enseñas:
 
 export class ChatInputError extends Error {}
 
-export class OpenAIError extends Error {
-  constructor(public status: number, public code: string | null) {
-    super(`OpenAI respondió ${status}${code ? ` (${code})` : ""}`);
-  }
-
-  /** Mensaje para el estudiante, sin detalles de la cuenta. */
-  get friendly(): string {
-    if (this.code === "insufficient_quota" || this.code === "credit_balance_exhausted") return "La cuenta de OpenAI no tiene saldo. Añade crédito en platform.openai.com → Billing.";
-    if (this.status === 401) return "La clave de OpenAI no es válida. Revisa OPENAI_API_KEY en web/.env.local.";
-    if (this.status === 429) return "Tocorito está atendiendo a demasiada gente. Espera un momento ☕";
-    if (this.code === "model_not_found") return "El modelo configurado no existe en tu cuenta. Revisa OPENAI_MODEL.";
-    return "Tocorito no pudo responder ahora. Inténtalo de nuevo.";
-  }
-}
-
 /** Valida lo que manda el navegador: solo roles conocidos, textos no vacíos y con límite. */
 export function validateMessages(input: unknown): ChatMessage[] {
   if (!Array.isArray(input) || input.length === 0) throw new ChatInputError("No hay mensajes.");
@@ -110,27 +98,3 @@ export function validateMessages(input: unknown): ChatMessage[] {
   return messages;
 }
 
-export async function askTocorito(
-  messages: ChatMessage[],
-  apiKey: string,
-  model: string,
-  system: string = TOCORITO_PROMPT
-): Promise<string> {
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model,
-      messages: [{ role: "system", content: system }, ...messages],
-      max_completion_tokens: 400,
-    }),
-    signal: AbortSignal.timeout(30_000),
-  });
-  if (!res.ok) {
-    // Solo usamos el código de error (p. ej. "insufficient_quota"), no el mensaje completo.
-    const code = ((await res.json().catch(() => null)) as { error?: { code?: string } } | null)?.error?.code;
-    throw new OpenAIError(res.status, code ?? null);
-  }
-  const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
-  return data.choices?.[0]?.message?.content?.trim() || "Mmm… me quedé dormido un segundo ☕ ¿Me lo repites?";
-}
