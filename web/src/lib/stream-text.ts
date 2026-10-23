@@ -19,8 +19,10 @@ export function visibleReplies(raw: string): string[] {
  */
 export function typingSafe(text: string): string {
   const cut = (at: number[]) => (at.length % 2 === 1 ? text.slice(0, at[at.length - 1]).trimEnd() : null);
+  // Los "$" dentro de código (`$t0`, ```…```, aunque aún no se haya cerrado) no son fórmulas: se tapan.
+  const masked = text.replace(/```[\s\S]*?(?:```|$)|`[^`\n]*(?:`|$)/g, (m) => " ".repeat(m.length));
   // Primero los bloques $$…$$, luego los $…$ sueltos.
-  const blocks = [...text.matchAll(/(?<!\\)\$\$/g)].map((m) => m.index!);
-  const singles = [...text.matchAll(/(?<![\\$])\$(?!\$)/g)].map((m) => m.index!);
+  const blocks = [...masked.matchAll(/(?<!\\)\$\$/g)].map((m) => m.index!);
+  const singles = [...masked.matchAll(/(?<![\\$])\$(?!\$)/g)].map((m) => m.index!);
   return cut(blocks) ?? cut(singles) ?? text;
 }

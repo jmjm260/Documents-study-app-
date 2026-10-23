@@ -79,6 +79,11 @@ describe("typingSafe (letra a letra)", async () => {
   it("las fórmulas completas se quedan", () => {
     expect(typingSafe("Es $x = 4$ y listo")).toBe("Es $x = 4$ y listo");
   });
+  it("los $ dentro de código no cortan el texto", () => {
+    expect(typingSafe("Mira `addi $t0, $zero, 5` y `$t1")).toBe("Mira `addi $t0, $zero, 5` y `$t1");
+    expect(typingSafe("```\naddi $t0")).toBe("```\naddi $t0");
+  });
+
   it("un $$ de bloque abierto también se esconde", () => {
     expect(typingSafe("Mira: $$F = m")).toBe("Mira:");
   });
