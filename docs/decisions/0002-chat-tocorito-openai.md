@@ -24,3 +24,11 @@ El dueño del proyecto quiere un chat donde responda Tocorito, la mascota de la 
 - El historial se manda entero en cada pregunta (no se guarda en el servidor).
 - Se envía texto del estudiante a un tercero (OpenAI): revisar con la skill `minor-privacy`
   antes de abrir a menores.
+
+## Actualización: proveedor local de pruebas
+
+Mientras la cuenta de OpenAI no tenga saldo, `CHAT_PROVIDER=claude` hace que Tocorito
+responda usando Claude Code instalado en la computadora (`web/src/lib/claude-local.ts`),
+con la sesión del dueño. Solo funciona en desarrollo (bloqueado en producción) y corre en
+una carpeta temporal vacía, sin herramientas ni acceso al proyecto. Para volver a OpenAI:
+quitar esa línea de `web/.env.local` o poner `CHAT_PROVIDER=openai`.

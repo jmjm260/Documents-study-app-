@@ -160,9 +160,27 @@ function Bubble({ message }: { message: ChatMessage }) {
     <div className="flex items-end gap-2">
       <Avatar />
       <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-bl-sm bg-[#1450d8] px-4 py-2.5 text-[15px] text-white shadow">
-        {message.content}
+        <Formatted text={message.content} />
       </div>
     </div>
+  );
+}
+
+/** Muestra **negrita** y *cursiva* (Tocorito usa *suspiro*). Sin HTML crudo: React escapa el texto. */
+function Formatted({ text }: { text: string }) {
+  const parts = text.split(/(\*\*[^*]+\*\*|\*[^*\n]+\*)/g);
+  return (
+    <>
+      {parts.map((part, i) =>
+        part.startsWith("**") && part.endsWith("**") && part.length > 4 ? (
+          <strong key={i}>{part.slice(2, -2)}</strong>
+        ) : part.startsWith("*") && part.endsWith("*") && part.length > 2 ? (
+          <em key={i} className="opacity-90">{part.slice(1, -1)}</em>
+        ) : (
+          part
+        )
+      )}
+    </>
   );
 }
 
