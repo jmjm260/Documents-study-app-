@@ -8,7 +8,9 @@ import { dayKey } from "@/lib/calendar";
 import LevelPicker from "@/components/chat/LevelPicker";
 import { DEFAULT_REASONING_LEVEL, REASONING_LEVELS, type ReasoningLevel } from "@/lib/ai/reasoning";
 import type { ChatStatus } from "@/lib/ai/types";
-import { MAX_CHARS, type ChatMessage } from "@/lib/chat";
+import PhotoViewer from "@/components/chat/PhotoViewer";
+import { MAX_CHARS, MAX_IMAGES, type ChatMessage } from "@/lib/chat";
+import { compressImage } from "@/lib/images";
 import { loadPrefs, savePrefs } from "@/lib/prefs";
 import { visibleReplies } from "@/lib/stream-text";
 import { actionNote, MAX_CONTEXT_ITEMS, type ChatContext } from "@/lib/chat-actions";
@@ -35,8 +37,14 @@ function calendarContext(): ChatContext {
 
 /** Lo que se manda a la IA: las tarjetas se convierten en una nota para que Tocorito las recuerde. */
 function toHistory(messages: UiMessage[]): ChatMessage[] {
-  return messages.flatMap((m): ChatMessage[] =>
+  const history = messages.flatMap((m): ChatMessage[] =>
     m.role === "action" ? (m.undone ? [] : [{ role: "assistant", content: actionNote(m.entry) }]) : [m]
+  );
+  // Las fotos solo viajan con el último mensaje; en los anteriores dejamos una marca.
+  return history.map((m, i) =>
+    m.images?.length && i !== history.length - 1
+      ? { role: m.role, content: `${m.content || ""} [envió ${m.images.length} foto(s)]`.trim() }
+      : m
   );
 }
 
@@ -74,6 +82,10 @@ async function* readEvents(res: Response): AsyncGenerator<Record<string, unknown
 export default function Chat() {
   const [messages, setMessages] = useState<UiMessage[]>([]);
   const [input, setInput] = useState("");
+  // Fotos preparadas para el próximo mensaje (ya comprimidas, como data URL).
+  const [photos, setPhotos] = useState<string[]>([]);
+  const [viewing, setViewing] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
   const [thinking, setThinking] = useState(false);
   const [status, setStatus] = useState<ChatStatus>("preparing");
   // Burbujas que se van escribiendo mientras llega la respuesta.
@@ -112,12 +124,27 @@ export default function Chat() {
     if (input) el.style.height = `${Math.min(el.scrollHeight, 140)}px`;
   }, [input]);
 
+  async function addPhotos(files: File[]) {
+    const images = files.filter((f) => f.type.startsWith("image/"));
+    if (!images.length) return;
+    const room = MAX_IMAGES - photos.length;
+    if (images.length > room) setError(`Puedes mandar hasta ${MAX_IMAGES} fotos a la vez.`);
+    try {
+      const ready = await Promise.all(images.slice(0, Math.max(room, 0)).map(compressImage));
+      setPhotos((p) => [...p, ...ready].slice(0, MAX_IMAGES));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No pude abrir esa foto.");
+    }
+  }
+
   async function send(text: string) {
     const content = text.trim();
-    if (!content || thinking) return;
-    const next: UiMessage[] = [...messages, { role: "user", content }];
+    if ((!content && photos.length === 0) || thinking) return;
+    const userMsg: ChatMessage = photos.length ? { role: "user", content, images: photos } : { role: "user", content };
+    const next: UiMessage[] = [...messages, userMsg];
     setMessages(next);
     setInput("");
+    setPhotos([]);
     setError(null);
     setThinking(true);
     setStatus("preparing");
@@ -174,6 +201,7 @@ export default function Chat() {
     setMessages([]);
     setError(null);
     setInput("");
+    setPhotos([]);
     setLevel(defaultLevel);
   }
 
@@ -229,7 +257,7 @@ export default function Chat() {
                 const nextMsg = shown[i + 1];
                 const firstOfGroup = prev?.role !== m.role;
                 const lastOfGroup = nextMsg?.role !== m.role;
-                return <Bubble key={i} message={m} firstOfGroup={firstOfGroup} lastOfGroup={lastOfGroup} />;
+                return <Bubble key={i} message={m} firstOfGroup={firstOfGroup} lastOfGroup={lastOfGroup} onOpenPhoto={setViewing} />;
               })}
               {/* Mientras no llega texto: "Preparando… / Pensando…" (nunca el razonamiento interno). */}
               {thinking && live.length === 0 && <Typing label={STATUS_LABEL[status]} grouped={shown.at(-1)?.role === "assistant"} />}
@@ -246,19 +274,71 @@ export default function Chat() {
       </main>
 
       <footer className="shrink-0 border-t border-slate-200 bg-white px-3 pb-2 pt-2 sm:px-6">
+        {photos.length > 0 && (
+          <div className="mx-auto mb-2 flex max-w-3xl gap-2 overflow-x-auto px-1 pt-1.5">
+            {photos.map((src, i) => (
+              <div key={i} className="relative shrink-0">
+                {/* eslint-disable-next-line @next/next/no-img-element -- foto local (data URL) */}
+                <img src={src} alt={`Foto ${i + 1}`} className="h-16 w-16 rounded-xl border border-slate-200 object-cover" />
+                <button
+                  type="button"
+                  onClick={() => setPhotos((p) => p.filter((_, j) => j !== i))}
+                  aria-label={`Quitar foto ${i + 1}`}
+                  className="absolute -right-1.5 -top-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-[#0b1840] text-white shadow"
+                >
+                  <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={3} aria-hidden>
+                    <path strokeLinecap="round" d="M6 6l12 12M18 6L6 18" />
+                  </svg>
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
         <form
           onSubmit={(e) => {
             e.preventDefault();
             send(input);
           }}
-          className="relative mx-auto flex max-w-3xl items-end gap-1 rounded-[22px] border border-slate-300 bg-white py-1 pl-4 pr-1 shadow-sm focus-within:border-[#1450d8] focus-within:ring-2 focus-within:ring-[#1450d8]/15"
+          className="relative mx-auto flex max-w-3xl items-end gap-1 rounded-[22px] border border-slate-300 bg-white py-1 pl-1 pr-1 shadow-sm focus-within:border-[#1450d8] focus-within:ring-2 focus-within:ring-[#1450d8]/15"
         >
+          {/* Adjuntar fotos: en el móvil ofrece cámara o galería */}
+          <button
+            type="button"
+            onClick={() => fileRef.current?.click()}
+            disabled={thinking || photos.length >= MAX_IMAGES}
+            aria-label="Añadir fotos"
+            title="Añadir fotos"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-[#0b1840] disabled:opacity-40"
+          >
+            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2.2} aria-hidden>
+              <path strokeLinecap="round" d="M12 5v14M5 12h14" />
+            </svg>
+          </button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            multiple
+            hidden
+            onChange={(e) => {
+              addPhotos(Array.from(e.target.files ?? []));
+              e.target.value = "";
+            }}
+          />
           <textarea
             ref={inputRef}
             rows={1}
             value={input}
             maxLength={MAX_CHARS}
             onChange={(e) => setInput(e.target.value)}
+            // Pegar una captura (Ctrl+V) la añade como foto.
+            onPaste={(e) => {
+              const files = Array.from(e.clipboardData.files).filter((f) => f.type.startsWith("image/"));
+              if (files.length) {
+                e.preventDefault();
+                addPhotos(files);
+              }
+            }}
             onKeyDown={(e) => {
               // Enter envía; Shift+Enter hace salto de línea (en móvil el teclado pone su propio botón).
               if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -266,7 +346,7 @@ export default function Chat() {
                 send(input);
               }
             }}
-            placeholder="Pregúntale algo a Tocorito…"
+            placeholder={photos.length ? "Añade una pregunta (opcional)…" : "Pregúntale algo a Tocorito…"}
             aria-label="Mensaje para Tocorito"
             className="max-h-[140px] min-h-9 min-w-0 flex-1 resize-none bg-transparent py-1.5 text-[15px] leading-6 outline-none placeholder:text-slate-400 placeholder-shown:overflow-hidden placeholder-shown:text-ellipsis placeholder-shown:whitespace-nowrap"
           />
@@ -279,7 +359,7 @@ export default function Chat() {
             onChange={chooseLevel}
           />
           <button
-            disabled={thinking || !input.trim()}
+            disabled={thinking || (!input.trim() && photos.length === 0)}
             aria-label="Enviar"
             className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#e5262b] text-white transition active:scale-95 disabled:bg-slate-200 disabled:text-slate-400"
           >
@@ -293,6 +373,7 @@ export default function Chat() {
           Tocorito puede equivocarse. No compartas contraseñas ni datos personales.
         </p>
       </footer>
+      {viewing && <PhotoViewer src={viewing} onClose={() => setViewing(null)} />}
     </div>
   );
 }
@@ -333,18 +414,45 @@ function Avatar({ size, ring = false }: { size: number; ring?: boolean }) {
   );
 }
 
-function Bubble({ message, firstOfGroup, lastOfGroup }: { message: ChatMessage; firstOfGroup: boolean; lastOfGroup: boolean }) {
+function Bubble({
+  message,
+  firstOfGroup,
+  lastOfGroup,
+  onOpenPhoto,
+}: {
+  message: ChatMessage;
+  firstOfGroup: boolean;
+  lastOfGroup: boolean;
+  onOpenPhoto: (src: string) => void;
+}) {
   const spacing = firstOfGroup ? "mt-4 first:mt-0" : "mt-1";
   if (message.role === "user") {
+    const images = message.images ?? [];
     return (
-      <div className={`flex justify-end ${spacing}`}>
-        <div
-          className={`max-w-[85%] whitespace-pre-wrap break-words rounded-[20px] bg-[#1450d8] px-4 py-2.5 text-[15px] leading-relaxed text-white sm:max-w-[75%] ${
-            lastOfGroup ? "rounded-br-md" : ""
-          }`}
-        >
-          {message.content}
-        </div>
+      <div className={`flex flex-col items-end gap-1 ${spacing}`}>
+        {images.length > 0 && (
+          <div className="flex max-w-[85%] flex-wrap justify-end gap-1 sm:max-w-[75%]">
+            {images.map((src, i) => (
+              <button key={i} type="button" onClick={() => onOpenPhoto(src)} aria-label={`Ver foto ${i + 1}`}>
+                {/* eslint-disable-next-line @next/next/no-img-element -- foto local (data URL) */}
+                <img
+                  src={src}
+                  alt={`Foto ${i + 1}`}
+                  className={`rounded-2xl border border-slate-200 object-cover ${images.length === 1 ? "max-h-64 max-w-[15rem]" : "h-28 w-28"}`}
+                />
+              </button>
+            ))}
+          </div>
+        )}
+        {message.content && (
+          <div
+            className={`max-w-[85%] whitespace-pre-wrap break-words rounded-[20px] bg-[#1450d8] px-4 py-2.5 text-[15px] leading-relaxed text-white sm:max-w-[75%] ${
+              lastOfGroup ? "rounded-br-md" : ""
+            }`}
+          >
+            {message.content}
+          </div>
+        )}
       </div>
     );
   }

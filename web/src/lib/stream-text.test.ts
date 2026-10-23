@@ -48,3 +48,25 @@ describe("niveles de razonamiento", () => {
     expect(claudeReasoningConfig("high").effort).toBe("high");
   });
 });
+
+describe("fotos hacia los proveedores", async () => {
+  const { toOpenAIMessage } = await import("./ai/openai");
+  const { userContent } = await import("./ai/claude-local");
+  const img = "data:image/png;base64,iVBORw0KGgo=";
+
+  it("OpenAI: texto + image_url", () => {
+    expect(toOpenAIMessage({ role: "user", content: "resuelve", images: [img] })).toEqual({
+      role: "user",
+      content: [{ type: "text", text: "resuelve" }, { type: "image_url", image_url: { url: img, detail: "high" } }],
+    });
+  });
+
+  it("Claude local: bloque de texto + bloque de imagen base64", () => {
+    const content = userContent([{ role: "user", content: "resuelve", images: [img] }], "");
+    expect(Array.isArray(content) && content[1]).toEqual({ type: "image", source: { type: "base64", media_type: "image/png", data: "iVBORw0KGgo=" } });
+  });
+
+  it("sin fotos, todo sigue siendo texto", () => {
+    expect(typeof userContent([{ role: "user", content: "hola" }], "")).toBe("string");
+  });
+});

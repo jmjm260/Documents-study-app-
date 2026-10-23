@@ -51,4 +51,5 @@
 - `web/src/components/chat/ActionCard.tsx` — tarjeta en el chat de lo que Tocorito anotó, con Deshacer.
 - `web/src/lib/ai/` — capa de IA: niveles de razonamiento, proveedores (OpenAI, Claude local pre-calentado), streaming y uso (ADR 0004).
 - `web/src/components/chat/LevelPicker.tsx` — botón "Medio ⌄" dentro de la barra de mensaje que abre un deslizador Instantáneo / Medio / Alto (estilo ChatGPT).
+- `web/src/lib/images.ts` + `web/src/components/chat/PhotoViewer.tsx` — fotos en el chat: se comprimen en el dispositivo y Tocorito resuelve lo que ve (ADR 0005).
 - `web/src/components/TabBar.tsx` — barra de pestañas inferior (Tocorito / Calendario), estilo app móvil.

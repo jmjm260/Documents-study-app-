@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ChatInputError, MAX_CHARS, MAX_MESSAGES, splitReply, validateMessages } from "./chat";
+import { ChatInputError, MAX_CHARS, MAX_IMAGES, MAX_MESSAGES, PHOTO_ONLY_TEXT, splitReply, validateMessages } from "./chat";
 
 describe("validateMessages", () => {
   it("acepta una conversación normal y recorta espacios", () => {
@@ -44,5 +44,31 @@ describe("splitReply", () => {
 
   it("ignora separadores vacíos", () => {
     expect(splitReply("|||\nhola\n|||\n|||")).toEqual(["hola"]);
+  });
+});
+
+describe("fotos en los mensajes", () => {
+  const img = "data:image/jpeg;base64,/9j/4AAQSkZJRg==";
+
+  it("acepta fotos en el último mensaje y pone texto si viene vacío", () => {
+    const [m] = validateMessages([{ role: "user", content: " ", images: [img] }]);
+    expect(m).toEqual({ role: "user", content: PHOTO_ONLY_TEXT, images: [img] });
+  });
+
+  it("quita las fotos de mensajes anteriores (ya se respondieron)", () => {
+    const msgs = validateMessages([
+      { role: "user", content: "mira", images: [img] },
+      { role: "assistant", content: "ok" },
+      { role: "user", content: "¿y esta?" },
+    ]);
+    expect(msgs[0].images).toBeUndefined();
+  });
+
+  it.each([
+    ["formato raro", ["data:image/svg+xml;base64,PHN2Zz4="]],
+    ["no es data URL", ["https://ejemplo.com/foto.jpg"]],
+    ["demasiadas", Array(MAX_IMAGES + 1).fill(img)],
+  ])("rechaza: %s", (_, images) => {
+    expect(() => validateMessages([{ role: "user", content: "x", images }])).toThrow(ChatInputError);
   });
 });

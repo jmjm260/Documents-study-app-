@@ -38,6 +38,22 @@ export function transcriptFor(messages: ChatMessage[], context: string): string 
   ].join("\n");
 }
 
+/** Texto de la conversación + las fotos del último mensaje como bloques de imagen. */
+export function userContent(messages: ChatMessage[], context: string) {
+  const images = messages.at(-1)?.images ?? [];
+  const text = transcriptFor(messages, context);
+  if (!images.length) return text;
+  return [
+    { type: "text", text: `${text}
+
+(El último mensaje del estudiante incluye ${images.length} foto${images.length > 1 ? "s" : ""}, abajo.)` },
+    ...images.map((url) => {
+      const [, mediaType, data] = url.match(/^data:(image\/[a-z]+);base64,([A-Za-z0-9+/=]+)$/) ?? [];
+      return { type: "image", source: { type: "base64", media_type: mediaType, data } };
+    }),
+  ];
+}
+
 type Warm = { child: ChildProcess; dir: string; system: string; lines: string[]; waiters: (() => void)[]; exited: boolean; stderr: string };
 
 // Guardado en globalThis para no dejar procesos huérfanos cuando Next recarga el código en desarrollo.
@@ -130,7 +146,7 @@ export function createClaudeLocalProvider(): ChatProvider {
       // Mientras respondemos, ya arrancamos el siguiente proceso de este nivel.
       prewarm(req.level, req.system);
 
-      const message = { type: "user", message: { role: "user", content: transcriptFor(req.messages, req.context) } };
+      const message = { type: "user", message: { role: "user", content: userContent(req.messages, req.context) } };
       proc.child.stdin?.write(JSON.stringify(message) + "\n");
 
       const deadline = Date.now() + TIMEOUT_MS;

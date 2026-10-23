@@ -1,10 +1,17 @@
 // Personalidad de Tocorito, validación de mensajes y reparto en burbujas.
 // Las llamadas a la IA viven en src/lib/ai/ (un archivo por proveedor).
 
-export type ChatMessage = { role: "user" | "assistant"; content: string };
+/** `images`: fotos del estudiante como data URL (solo en el último mensaje se envían a la IA). */
+export type ChatMessage = { role: "user" | "assistant"; content: string; images?: string[] };
 
 export const MAX_MESSAGES = 20;
 export const MAX_CHARS = 2000;
+export const MAX_IMAGES = 4;
+/** ~6 MB en base64 por foto (ya vienen comprimidas desde el navegador, normalmente < 1 MB). */
+export const MAX_IMAGE_CHARS = 8_000_000;
+/** Texto que se usa cuando el estudiante manda solo fotos. */
+export const PHOTO_ONLY_TEXT = "(Foto enviada sin texto)";
+const IMAGE_RE = /^data:image\/(jpeg|png|webp|gif);base64,[A-Za-z0-9+/]+=*$/;
 
 /** Separador que usa Tocorito para partir su respuesta en varios mensajes. */
 export const SPLIT_MARK = "|||";
@@ -33,8 +40,8 @@ Personalidad (tu público son adolescentes de 13+ y adultos, no niños):
   Puedes soltar alguna expresión cubana suave ("asere", "qué volá", "tremendo").
 - Usa como mucho un emoji por mensaje (☕ 🐦 📚 🙄).
 
-Cuando el estudiante NO quiere estudiar (dice que le da flojera, cambia de tema, pide que hagas
-la tarea por él, dice "después", "no tengo ganas", "na", etc.), te vuelves MUY pasivo-agresivo,
+Cuando el estudiante NO quiere estudiar (dice que le da flojera, cambia de tema, dice "después",
+"no tengo ganas", "na", etc.), te vuelves MUY pasivo-agresivo,
 al estilo del búho de Duolingo: dramático, con veneno, culpa y amenazas cómicas sobre su futuro.
 NO seas comprensivo ni le preguntes cómo se siente: un "no quiero" es flojera, no un drama.
 - Futuro catastrófico y exagerado: "Ah, ¿no quieres estudiar? Perfecto. Ve practicando:
@@ -72,7 +79,18 @@ Formato (muy importante):
 
 Cómo enseñas:
 - Explicas paso a paso y compruebas que el estudiante entendió con una pregunta corta.
-- No haces la tarea por el estudiante: guías, das pistas y ejemplos parecidos.
+- Si el estudiante pide las respuestas, se las das (resultado claro + cómo se llega en pocas líneas).
+  Si solo pide ayuda o una explicación, guías paso a paso.
+
+Fotos:
+- Si manda una foto (ejercicios, una página, una pizarra…), léela con cuidado antes de responder.
+- Si son ejercicios, resuélvelos todos: numerados igual que en la foto, con la respuesta final en
+  **negrita** y una o dos líneas de cómo se llega (fórmulas en LaTeX). Si son muchos, reparte en mensajes con |||.
+- Si solo manda la foto sin texto, entiende que quiere las respuestas.
+- Si algo no se lee bien (borroso, cortado), dilo y pide otra foto de esa parte. Nunca inventes lo que no ves.
+- En las fotos no comentes caras, nombres ni datos personales que aparezcan: céntrate en el estudio.
+
+Siempre:
 - Si una información no está en la conversación, lo dices; no la inventas.
 - Nunca pides contraseñas, datos personales, ni la URL del calendario de Canvas.
 - Hablas con adolescentes (13+) y adultos: trátalos como gente capaz, sin tono infantil.
@@ -83,16 +101,26 @@ export class ChatInputError extends Error {}
 /** Valida lo que manda el navegador: solo roles conocidos, textos no vacíos y con límite. */
 export function validateMessages(input: unknown): ChatMessage[] {
   if (!Array.isArray(input) || input.length === 0) throw new ChatInputError("No hay mensajes.");
-  const messages = input.slice(-MAX_MESSAGES).map((m) => {
+  const list = input.slice(-MAX_MESSAGES);
+  const messages = list.map((m, i): ChatMessage => {
     const role = (m as ChatMessage)?.role;
     const content = (m as ChatMessage)?.content;
+    const rawImages = (m as ChatMessage)?.images;
     if ((role !== "user" && role !== "assistant") || typeof content !== "string") {
       throw new ChatInputError("Mensaje con formato inválido.");
     }
-    const text = content.trim();
+    // Las fotos solo cuentan en el último mensaje (las anteriores ya se respondieron y gastarían mucho).
+    const isLast = i === list.length - 1;
+    const images = role === "user" && isLast && Array.isArray(rawImages) ? rawImages : [];
+    if (images.length > MAX_IMAGES) throw new ChatInputError(`Puedes mandar hasta ${MAX_IMAGES} fotos a la vez.`);
+    for (const img of images) {
+      if (typeof img !== "string" || !IMAGE_RE.test(img)) throw new ChatInputError("Formato de foto no válido (usa JPG, PNG o WebP).");
+      if (img.length > MAX_IMAGE_CHARS) throw new ChatInputError("Una de las fotos es demasiado grande.");
+    }
+    const text = content.trim() || (images.length ? PHOTO_ONLY_TEXT : "");
     if (!text) throw new ChatInputError("Mensaje vacío.");
     if (text.length > MAX_CHARS) throw new ChatInputError(`Cada mensaje puede tener como máximo ${MAX_CHARS} caracteres.`);
-    return { role, content: text };
+    return images.length ? { role, content: text, images } : { role, content: text };
   });
   if (messages[messages.length - 1].role !== "user") throw new ChatInputError("El último mensaje debe ser del estudiante.");
   return messages;

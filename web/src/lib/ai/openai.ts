@@ -1,5 +1,6 @@
 // Proveedor OpenAI con streaming (Chat Completions, SSE). Sin SDK: solo fetch.
 // Los modelos de razonamiento (gpt-5*, o*) aceptan `reasoning_effort`; los demás no.
+import type { ChatMessage } from "../chat";
 import type { ReasoningLevel } from "./reasoning";
 import { ProviderError, type ChatProvider, type ChatRequest, type LevelSupport, type ProviderEvent } from "./types";
 
@@ -31,6 +32,15 @@ function friendlyError(status: number, code: string | null): string {
   return "Tocorito no pudo responder ahora. Inténtalo de nuevo.";
 }
 
+/** Mensaje con fotos → partes de texto + imagen (formato de visión de OpenAI). */
+export function toOpenAIMessage(m: ChatMessage) {
+  if (!m.images?.length) return { role: m.role, content: m.content };
+  return {
+    role: m.role,
+    content: [{ type: "text", text: m.content }, ...m.images.map((url) => ({ type: "image_url", image_url: { url, detail: "high" } }))],
+  };
+}
+
 export function createOpenAIProvider(apiKey: string): ChatProvider {
   return {
     id: "openai",
@@ -48,7 +58,7 @@ export function createOpenAIProvider(apiKey: string): ChatProvider {
         headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
         body: JSON.stringify({
           model,
-          messages: [{ role: "system", content: system }, ...req.messages],
+          messages: [{ role: "system", content: system }, ...req.messages.map(toOpenAIMessage)],
           stream: true,
           stream_options: { include_usage: true },
           ...openaiReasoningConfig(model, req.level),
