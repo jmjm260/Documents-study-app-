@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import ActionCard from "@/components/chat/ActionCard";
 import ChatSidebar from "@/components/chat/ChatSidebar";
 import LevelPicker from "@/components/chat/LevelPicker";
@@ -155,7 +155,6 @@ export default function Chat() {
   const [levels, setLevels] = useState<{ level: ReasoningLevel; realReasoning: boolean }[]>(
     REASONING_LEVELS.map((l) => ({ level: l, realReasoning: true }))
   );
-  const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   // Tocorito "habla": cada mensaje se escribe en el globo y al terminar pasa al chat.
@@ -186,9 +185,13 @@ export default function Chat() {
     return () => ro.disconnect();
   }, [speech.active]);
 
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [messages, error, bubbleHeight]);
+  // El chat sube a la vez que el globo crece. Salto directo (no "smooth"): una animación suave se
+  // corta con cada letra nueva y el chat se quedaba a medio camino, debajo del globo.
+  const mainRef = useRef<HTMLElement>(null);
+  useLayoutEffect(() => {
+    const el = mainRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [messages, error, bubbleHeight, speech.active]);
 
   // Preferencia guardada + qué niveles ofrece el servidor (esto también "despierta" a Tocorito).
   useEffect(() => {
@@ -413,7 +416,7 @@ export default function Chat() {
       </header>
 
       <div className="relative min-h-0 flex-1">
-        <main className="h-full overflow-y-auto bg-black [color-scheme:dark]">
+        <main ref={mainRef} className="h-full overflow-y-auto bg-black [color-scheme:dark]">
           <div
             className="mx-auto flex min-h-full max-w-3xl flex-col px-4 py-5 sm:px-6"
             style={empty ? undefined : { paddingBottom: (speech.active ? bubbleHeight + 24 : 0) + 112 }}
@@ -440,7 +443,6 @@ export default function Chat() {
                 )}
               </div>
             )}
-            <div ref={bottomRef} />
           </div>
         </main>
         {!empty && speech.active && (
