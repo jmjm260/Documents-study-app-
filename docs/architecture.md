@@ -52,4 +52,5 @@
 - `web/src/lib/ai/` — capa de IA: niveles de razonamiento, proveedores (OpenAI, Claude local pre-calentado), streaming y uso (ADR 0004).
 - `web/src/components/chat/LevelPicker.tsx` — botón "Medio ⌄" dentro de la barra de mensaje que abre un deslizador Instantáneo / Medio / Alto (estilo ChatGPT).
 - `web/src/lib/images.ts` + `web/src/components/chat/PhotoViewer.tsx` — fotos en el chat: se comprimen en el dispositivo y Tocorito resuelve lo que ve (ADR 0005).
+- `web/src/components/chat/TocoritoFigure.tsx` + `web/src/lib/coffee.ts` — Tocorito de cuerpo entero en la esquina del chat (sin círculos); cuando "toma café" no lo escribe: pone [[CAFE]] y la app lo anima (`public/tocorito-idle.webp` / `tocorito-sip.webp`).
 - `web/src/components/TabBar.tsx` — barra de pestañas inferior (Tocorito / Calendario), estilo app móvil.

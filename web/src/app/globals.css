@@ -24,3 +24,20 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Tocorito: respira suave en reposo y se inclina al tomar café. */
+@keyframes tocorito-breathe {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-2px); }
+}
+@keyframes tocorito-sip {
+  0% { transform: rotate(0) translateY(0); }
+  18% { transform: rotate(-6deg) translateY(-3px); }
+  82% { transform: rotate(-6deg) translateY(-3px); }
+  100% { transform: rotate(0) translateY(0); }
+}
+.tocorito-breathe { animation: tocorito-breathe 3.2s ease-in-out infinite; }
+.tocorito-sip { animation: tocorito-sip 1.9s ease-in-out; transform-origin: 50% 90%; }
+@media (prefers-reduced-motion: reduce) {
+  .tocorito-breathe, .tocorito-sip { animation: none; }
+}

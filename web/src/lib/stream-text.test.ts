@@ -10,13 +10,13 @@ describe("visibleReplies (texto mientras llega)", () => {
   });
 
   it("oculta un bloque de calendario a medio llegar", () => {
-    expect(visibleReplies('Listo ☕\n[[CALENDARIO]]{"tipo":"exa')).toEqual(["Listo ☕"]);
-    expect(visibleReplies("Listo ☕\n[[CALEN")).toEqual(["Listo ☕"]);
-    expect(visibleReplies("Listo ☕\n[")).toEqual(["Listo ☕"]);
+    expect(visibleReplies('Listo ☕\n[[CALENDARIO]]{"tipo":"exa')).toEqual(["Listo"]);
+    expect(visibleReplies("Listo ☕\n[[CALEN")).toEqual(["Listo"]);
+    expect(visibleReplies("Listo ☕\n[")).toEqual(["Listo"]);
   });
 
   it("oculta bloques completos", () => {
-    expect(visibleReplies('a [[CALENDARIO]]{"x":1}[[/CALENDARIO]] b')).toEqual(["a  b"]);
+    expect(visibleReplies('a [[CALENDARIO]]{"x":1}[[/CALENDARIO]] b')).toEqual(["a b"]);
   });
 
   it("no enseña un separador a medio llegar", () => {

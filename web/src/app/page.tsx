@@ -1,8 +1,8 @@
 "use client";
 
-import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import ActionCard from "@/components/chat/ActionCard";
+import TocoritoFigure from "@/components/chat/TocoritoFigure";
 import RichText from "@/components/RichText";
 import { dayKey } from "@/lib/calendar";
 import LevelPicker from "@/components/chat/LevelPicker";
@@ -12,6 +12,7 @@ import PhotoViewer from "@/components/chat/PhotoViewer";
 import { MAX_CHARS, MAX_IMAGES, type ChatMessage } from "@/lib/chat";
 import { compressImage } from "@/lib/images";
 import { loadPrefs, savePrefs } from "@/lib/prefs";
+import { extractCoffee } from "@/lib/coffee";
 import { visibleReplies } from "@/lib/stream-text";
 import { actionNote, MAX_CONTEXT_ITEMS, type ChatContext } from "@/lib/chat-actions";
 import { addEntries, KIND_INFO, loadCanvasCache, loadEntries, removeEntry, toCalendarItems, type Entry, type EntryDraft } from "@/lib/entries";
@@ -86,6 +87,14 @@ export default function Chat() {
   const [photos, setPhotos] = useState<string[]>([]);
   const [viewing, setViewing] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  // Animación de Tocorito tomando café (sustituye a escribir "*sorbo largo*" en el texto).
+  const [sipping, setSipping] = useState(false);
+  const sipTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  function sip() {
+    if (sipTimer.current) clearTimeout(sipTimer.current);
+    setSipping(true);
+    sipTimer.current = setTimeout(() => setSipping(false), 1900);
+  }
   const [thinking, setThinking] = useState(false);
   const [status, setStatus] = useState<ChatStatus>("preparing");
   // Burbujas que se van escribiendo mientras llega la respuesta.
@@ -160,11 +169,16 @@ export default function Chat() {
         throw new Error(data.error ?? "Tocorito no pudo responder.");
       }
       let raw = "";
+      let sipped = false;
       for await (const ev of readEvents(res)) {
         if (ev.type === "status") setStatus(ev.status as ChatStatus);
         else if (ev.type === "text") {
           raw += ev.delta as string;
           setLive(visibleReplies(raw));
+          if (!sipped && extractCoffee(raw).sip) {
+            sipped = true;
+            sip();
+          }
         } else if (ev.type === "error") {
           throw new Error((ev.error as string) ?? "Tocorito no pudo responder.");
         } else if (ev.type === "done") {
@@ -172,6 +186,7 @@ export default function Chat() {
           const replies = (ev.replies as string[]).map((content) => ({ role: "assistant" as const, content }));
           const actions = (ev.actions as EntryDraft[]) ?? [];
           const created = actions.length ? addEntries(actions) : [];
+          if (ev.sip && !sipped) sip();
           setMessages([...next, ...replies, ...created.map((entry) => ({ role: "action" as const, entry, undone: false }))]);
           setLive([]);
         }
@@ -219,7 +234,6 @@ export default function Chat() {
 
       <header className="shrink-0 border-b border-slate-200 bg-white px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] sm:px-6">
         <div className="mx-auto flex max-w-3xl items-center gap-3">
-          <Avatar size={44} ring />
           <div className="min-w-0 flex-1">
             <h1 className="text-[17px] font-extrabold leading-tight tracking-tight">Tocorito</h1>
             <p className="flex items-center gap-1.5 text-xs text-slate-500">
@@ -243,10 +257,11 @@ export default function Chat() {
         </div>
       </header>
 
-      <main className="min-h-0 flex-1 overflow-y-auto bg-[#fbfaf6]">
-        <div className="mx-auto flex min-h-full max-w-3xl flex-col px-4 py-5 sm:px-6">
+      <div className="relative min-h-0 flex-1">
+      <main className="h-full overflow-y-auto bg-[#fbfaf6]">
+        <div className={`mx-auto flex min-h-full max-w-3xl flex-col px-4 py-5 sm:px-6 ${empty ? "" : "pb-28"}`}>
           {empty ? (
-            <Welcome onPick={send} />
+            <Welcome onPick={send} sipping={sipping} />
           ) : (
             <div className="flex flex-col">
               {shown.map((m, i) => {
@@ -272,6 +287,15 @@ export default function Chat() {
           <div ref={bottomRef} />
         </div>
       </main>
+      {/* Tocorito vive en la esquina; toma café cuando "habla" de café. */}
+      {!empty && (
+        <div className="pointer-events-none absolute bottom-1 right-1 sm:right-4">
+          {/* Más pequeño en el móvil para que quepa al lado de las burbujas */}
+          <TocoritoFigure height={70} sipping={sipping} className="sm:hidden" />
+          <TocoritoFigure height={96} sipping={sipping} className="hidden sm:block" />
+        </div>
+      )}
+      </div>
 
       <footer className="shrink-0 border-t border-slate-200 bg-white px-3 pb-2 pt-2 sm:px-6">
         {photos.length > 0 && (
@@ -378,13 +402,13 @@ export default function Chat() {
   );
 }
 
-function Welcome({ onPick }: { onPick: (text: string) => void }) {
+function Welcome({ onPick, sipping }: { onPick: (text: string) => void; sipping: boolean }) {
   return (
     <div className="m-auto flex w-full flex-col items-center py-6 text-center">
-      <Avatar size={96} ring />
+      <TocoritoFigure height={150} sipping={sipping} priority />
       <h2 className="mt-4 text-2xl font-extrabold tracking-tight">¡Qué volá! Soy Tocorito</h2>
       <p className="mt-1 max-w-sm text-sm text-slate-500">
-        Tu tutor de estudio, con café en mano ☕ Pregúntame lo que estés estudiando y vamos paso a paso.
+        Tu tutor de estudio, con café en mano. Pregúntame lo que estés estudiando y vamos paso a paso.
       </p>
       <p className="mt-2 text-[11px] text-slate-400 sm:hidden">Tocorito puede equivocarse. No compartas contraseñas ni datos personales.</p>
       <div className="mt-6 grid w-full max-w-lg grid-cols-1 gap-2 sm:grid-cols-2">
@@ -403,16 +427,6 @@ function Welcome({ onPick }: { onPick: (text: string) => void }) {
   );
 }
 
-function Avatar({ size, ring = false }: { size: number; ring?: boolean }) {
-  return (
-    <div
-      className={`relative shrink-0 overflow-hidden rounded-full bg-white ${ring ? "ring-2 ring-[#1450d8]/20" : "border border-slate-200"}`}
-      style={{ width: size, height: size }}
-    >
-      <Image src="/tocoro.webp" alt="" fill sizes={`${size}px`} className="object-contain" priority={size > 40} />
-    </div>
-  );
-}
 
 function Bubble({
   message,
@@ -457,10 +471,9 @@ function Bubble({
     );
   }
   return (
-    <div className={`flex items-end gap-2 ${spacing}`}>
-      <div className="w-7 shrink-0">{lastOfGroup && <Avatar size={28} />}</div>
+    <div className={`flex ${spacing}`}>
       <div
-        className={`max-w-[85%] whitespace-pre-wrap break-words rounded-[20px] border border-slate-200 bg-white px-4 py-2.5 text-[15px] leading-relaxed text-[#0b1840] shadow-[0_1px_2px_rgba(11,24,64,0.05)] sm:max-w-[75%] ${
+        className={`max-w-[82%] whitespace-pre-wrap break-words rounded-[20px] border border-slate-200 bg-white px-4 py-2.5 text-[15px] leading-relaxed text-[#0b1840] shadow-[0_1px_2px_rgba(11,24,64,0.05)] sm:max-w-[75%] ${
           lastOfGroup ? "rounded-bl-md" : ""
         }`}
       >
@@ -472,10 +485,7 @@ function Bubble({
 
 function Typing({ grouped, label }: { grouped: boolean; label: string }) {
   return (
-    <div className={`flex items-end gap-2 ${grouped ? "mt-1" : "mt-4"}`} role="status" aria-label={label}>
-      <div className="w-7 shrink-0">
-        <Avatar size={28} />
-      </div>
+    <div className={`flex ${grouped ? "mt-1" : "mt-4"}`} role="status" aria-label={label}>
       <div className="flex items-center gap-2 rounded-[20px] rounded-bl-md border border-slate-200 bg-white px-4 py-2.5">
         <span className="flex gap-1">
           {[0, 150, 300].map((d) => (

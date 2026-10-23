@@ -64,7 +64,7 @@ export function requestNotificationPermission() {
 export function showSystemNotification(title: string, body: string) {
   if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
   try {
-    new Notification(title, { body, icon: "/tocoro.webp", tag: title });
+    new Notification(title, { body, icon: "/tocorito-idle.webp", tag: title });
   } catch {
     // Algunos navegadores móviles solo permiten notificaciones desde un service worker.
   }

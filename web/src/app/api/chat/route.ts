@@ -2,7 +2,8 @@
 // Responde en streaming (NDJSON: un objeto JSON por línea):
 //   {"type":"status","status":"preparing"|"thinking"|"generating"}
 //   {"type":"text","delta":"..."}                      ← texto en bruto, según llega
-//   {"type":"done","replies":[...],"actions":[...],"level":"medium"}   ← versión final limpia
+//   {"type":"done","replies":[...],"actions":[...],"level":"medium","sip":true}  ← versión final limpia
+//                                                     (sip = Tocorito toma café: el navegador lo anima)
 //   {"type":"error","error":"..."}
 // El navegador solo manda el NIVEL (instant/medium/high); el servidor decide modelo y parámetros.
 // No registramos el contenido de los mensajes ni del calendario.
@@ -15,6 +16,7 @@ import { recordUsage } from "@/lib/ai/usage";
 import { TOCORITO_SYSTEM as SYSTEM } from "@/lib/ai/system";
 import { ChatInputError, splitReply, validateMessages } from "@/lib/chat";
 import { calendarData, extractActions, validateContext } from "@/lib/chat-actions";
+import { extractCoffee } from "@/lib/coffee";
 
 export const runtime = "nodejs";
 
@@ -66,9 +68,11 @@ export async function POST(request: Request) {
           }
         }
         // Sin contexto no hay acceso al calendario: ignoramos cualquier bloque.
-        const { text, actions } = extractActions(raw);
-        const replies = text ? splitReply(text) : ["Listo, anotado ☕"];
-        send({ type: "done", replies, actions: context ? actions : [], level });
+        const { text: withoutActions, actions } = extractActions(raw);
+        // Los sorbos de café no van en el texto: el navegador anima a Tocorito.
+        const { text, sip } = extractCoffee(withoutActions);
+        const replies = text ? splitReply(text) : ["Listo, anotado."];
+        send({ type: "done", replies, actions: context ? actions : [], level, sip });
         recordUsage({ provider: provider.id, level, ...usage, firstTokenMs, totalMs: Date.now() - started });
       } catch (err) {
         console.error(`chat (${provider.id}, ${level}): fallo:`, err instanceof Error ? err.message : "desconocido");

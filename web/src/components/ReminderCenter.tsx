@@ -2,8 +2,8 @@
 
 // Vigila los recordatorios mientras la app está abierta y los muestra:
 // notificación del sistema (si hay permiso) + aviso dentro de la app con Tocorito.
-import Image from "next/image";
 import { useCallback, useEffect, useState } from "react";
+import TocoritoFigure from "@/components/chat/TocoritoFigure";
 import { ENTRIES_CHANGED, loadEntries } from "@/lib/entries";
 import { dueReminders, loadFired, nextReminderAt, reminderText, saveFired, showSystemNotification } from "@/lib/reminders";
 
@@ -60,9 +60,7 @@ export default function ReminderCenter() {
           role="alert"
           className="pointer-events-auto flex w-full max-w-md items-start gap-3 rounded-2xl border border-slate-200 bg-white/95 p-3 shadow-xl backdrop-blur"
         >
-          <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-full border border-slate-200 bg-white">
-            <Image src="/tocoro.webp" alt="" fill sizes="40px" className="object-contain" />
-          </div>
+          <TocoritoFigure height={48} sipping breathe={false} />
           <div className="min-w-0 flex-1">
             <p className="text-sm font-bold text-[#0b1840]">{b.title}</p>
             <p className="text-xs text-slate-500">{b.body}</p>
