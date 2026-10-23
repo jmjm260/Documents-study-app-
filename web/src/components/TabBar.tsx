@@ -4,14 +4,25 @@
 // Respeta la zona segura de abajo (la barra de inicio del iPhone) con safe-area-inset-bottom.
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
+import { FOCUS_EVENT, loadFocus } from "@/lib/focus-store";
 
 const TABS = [
   { href: "/", label: "Tocorito", icon: ChatIcon },
+  { href: "/focus", label: "Focus", icon: FocusIcon },
   { href: "/calendario", label: "Calendario", icon: CalendarIcon },
 ];
 
 export default function TabBar() {
   const pathname = usePathname();
+  // Punto rojo en Focus cuando hay una lección pendiente.
+  const [focusPending, setFocusPending] = useState(false);
+  useEffect(() => {
+    const sync = () => setFocusPending(Boolean(loadFocus()));
+    sync();
+    window.addEventListener(FOCUS_EVENT, sync);
+    return () => window.removeEventListener(FOCUS_EVENT, sync);
+  }, []);
   // Toda la app es oscura.
   const dark = true;
   return (
@@ -31,7 +42,12 @@ export default function TabBar() {
                   active ? (dark ? "text-[#6ea0ff]" : "text-[#1450d8]") : dark ? "text-slate-500 active:text-white" : "text-slate-500 active:text-[#1450d8]"
                 }`}
               >
-                <Icon active={active} />
+                <span className="relative">
+                  <Icon active={active} />
+                  {href === "/focus" && focusPending && (
+                    <span className="absolute -right-1 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-black bg-[#e5262b]" aria-label="Lección pendiente" />
+                  )}
+                </span>
                 {label}
                 <span className={`h-1 w-6 rounded-full ${active ? "bg-[#e5262b]" : "bg-transparent"}`} />
               </Link>
@@ -47,6 +63,17 @@ function ChatIcon({ active }: { active: boolean }) {
   return (
     <svg viewBox="0 0 24 24" className="h-6 w-6" fill={active ? "currentColor" : "none"} stroke="currentColor" strokeWidth={2} aria-hidden>
       <path strokeLinejoin="round" d="M4 5h16v11H9l-5 4V5z" />
+    </svg>
+  );
+}
+
+function FocusIcon({ active }: { active: boolean }) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden>
+      <circle cx="12" cy="12" r="8.5" />
+      <circle cx="12" cy="12" r="4.5" />
+      <circle cx="12" cy="12" r="1.2" fill={active ? "currentColor" : "none"} />
+      {active && <circle cx="12" cy="12" r="4.5" fill="currentColor" opacity={0.35} />}
     </svg>
   );
 }

@@ -11,4 +11,6 @@
 | URL del feed iCal es secreta | Quien la tenga ve el calendario del estudiante | Tratarla como credencial: cifrada en BD, nunca en logs . Hoy se guarda en localStorage del navegador (solo pruebas); en la app irá a Keychain/Keystore | abierto |
 | Recordatorios en la web | Solo suenan con la app abierta; en móvil web las notificaciones son limitadas | En la app nativa usar notificaciones locales del sistema (Capacitor) | abierto |
 | Fotos enviadas a la IA | Pueden incluir caras, nombres o datos de otras personas | No se guardan en servidor; Tocorito no comenta datos personales; avisar en la app y revisar con minor-privacy | abierto |
+| Focus se salta en la web | El bloqueo vive en localStorage: borrar los datos del navegador lo quita | Con cuentas, guardar el Focus pendiente en el servidor (ADR 0008) | abierto |
+| Resolver tareas / "listas para entregar" | Escuelas pueden verlo como trampa; Apple revisa apps educativas con lupa | Focus obligatorio tras cada tarea resuelta; decidir aparte si se generan imágenes para entregar | abierto |
 | Plan gratis de Supabase | Se pausa tras ~1 semana sin uso; correo de pruebas con muy pocos envíos por hora; sin copias de seguridad | Antes de publicar: SMTP propio y plan Pro (ADR 0007) | abierto |

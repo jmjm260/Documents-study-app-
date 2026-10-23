@@ -2,8 +2,9 @@
 // Responde en streaming (NDJSON: un objeto JSON por línea):
 //   {"type":"status","status":"preparing"|"thinking"|"generating"}
 //   {"type":"text","delta":"..."}                      ← texto en bruto, según llega
-//   {"type":"done","replies":[...],"actions":[...],"removals":["id"],"level":"medium","sip":true}  ← versión final limpia
-//                                                     (sip = Tocorito toma café: el navegador lo anima)
+//   {"type":"done","replies":[...],"actions":[...],"removals":["id"],"level":"medium","sip":true,"focus":null}  ← versión final limpia
+//                                                     (sip = Tocorito toma café: el navegador lo anima;
+//                                                      focus = {topic, task} si resolvió una tarea → mini lección)
 //   {"type":"error","error":"..."}
 // El navegador solo manda el NIVEL (instant/medium/high); el servidor decide modelo y parámetros.
 // No registramos el contenido de los mensajes ni del calendario.
@@ -18,6 +19,7 @@ import { ChatInputError, splitReply, validateMessages } from "@/lib/chat";
 import { calendarData, extractActions, validateContext } from "@/lib/chat-actions";
 import { createSupabaseServer, supabaseConfigured } from "@/lib/supabase/server";
 import { extractCoffee } from "@/lib/coffee";
+import { extractFocus } from "@/lib/focus";
 
 export const runtime = "nodejs";
 
@@ -76,9 +78,11 @@ export async function POST(request: Request) {
         // Sin contexto no hay acceso al calendario: ignoramos cualquier bloque.
         const { text: withoutActions, actions, removals } = extractActions(raw);
         // Los sorbos de café no van en el texto: el navegador anima a Tocorito.
-        const { text, sip } = extractCoffee(withoutActions);
+        // Si Tocorito resolvió una tarea, la marca [[FOCUS]] dice de qué va la mini lección.
+        const { text: withoutFocus, focus } = extractFocus(withoutActions);
+        const { text, sip } = extractCoffee(withoutFocus);
         const replies = text ? splitReply(text) : ["Listo, anotado."];
-        send({ type: "done", replies, actions: context ? actions : [], removals: context ? removals : [], level, sip });
+        send({ type: "done", replies, actions: context ? actions : [], removals: context ? removals : [], level, sip, focus });
         recordUsage({ provider: provider.id, level, ...usage, firstTokenMs, totalMs: Date.now() - started });
       } catch (err) {
         console.error(`chat (${provider.id}, ${level}): fallo:`, err instanceof Error ? err.message : "desconocido");

@@ -57,4 +57,6 @@
 - `web/src/app/api/conversations/` + `web/src/lib/server/` — historial de chats en el SERVIDOR (ADR 0006): lista paginada solo con metadatos, mensajes al abrir, títulos con IA, identidad anónima por dispositivo. Almacenamiento provisional en archivos (`.data/`), listo para cambiar a base de datos.
 - `web/src/components/chat/ChatSidebar.tsx` + `useConversations.ts` — panel lateral desde la izquierda (82%) con "Nuevo chat" y el historial; ☰ o deslizar desde el borde.
 - `web/src/lib/supabase/` + `web/src/middleware.ts` + `web/src/components/auth/` — cuentas con Supabase: pantalla de inicio de sesión, sesión en cookies, regla 13+ (ADR 0007). `web/src/lib/server/supabase-store.ts` guarda los chats en la base de datos.
-- `web/src/components/TabBar.tsx` — barra de pestañas inferior (Tocorito / Calendario), estilo app móvil.
+- `web/src/components/TabBar.tsx` — barra de pestañas inferior (Tocorito / Focus / Calendario), estilo app móvil.
+- `web/src/lib/focus.ts` + `focus-store.ts` + `web/src/app/focus/page.tsx` + `web/src/app/api/focus/lesson/route.ts` — Focus:
+  tras resolver una tarea ([[FOCUS]]), mini lección con tiempo mínimo y prueba rápida; el chat queda bloqueado hasta acabar (ADR 0008, + pruebas).

@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import ActionCard from "@/components/chat/ActionCard";
 import ChatSidebar from "@/components/chat/ChatSidebar";
@@ -16,6 +17,8 @@ import { dayKey } from "@/lib/calendar";
 import { MAX_CHARS, MAX_IMAGES, type ChatMessage } from "@/lib/chat";
 import { actionNote, MAX_CONTEXT_ITEMS, removalNote, type ChatContext } from "@/lib/chat-actions";
 import { extractCoffee } from "@/lib/coffee";
+import type { FocusTopic } from "@/lib/focus";
+import { loadFocus, startFocus } from "@/lib/focus-store";
 import type { UiMessage } from "@/lib/conversations";
 import {
   addEntries,
@@ -157,6 +160,14 @@ export default function Chat() {
   );
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
+  // Focus: si hay una lección pendiente, el chat no se usa hasta terminarla.
+  const router = useRouter();
+  const [goingToFocus, setGoingToFocus] = useState(false);
+  const focusAfterSpeech = useRef(false);
+  useEffect(() => {
+    if (loadFocus()) router.replace("/focus");
+  }, [router]);
+
   // Tocorito "habla": cada mensaje se escribe en el globo y al terminar pasa al chat.
   const pendingCards = useRef<Card[]>([]);
   const speech = useSpeech({
@@ -165,14 +176,20 @@ export default function Chat() {
       const cards = pendingCards.current;
       pendingCards.current = [];
       if (cards.length) setMessages((m) => [...m, ...cards.map((c) => ({ role: "action" as const, ...c, undone: false }))]);
+      // Resolvió una tarea: unos segundos para ver la respuesta y directo a Focus (obligatorio).
+      if (focusAfterSpeech.current) {
+        focusAfterSpeech.current = false;
+        setGoingToFocus(true);
+        setTimeout(() => router.push("/focus"), 3000);
+      }
       // Cuando ya terminó de hablar: guardar en el servidor y, si es nuevo, ponerle título con IA.
       setTimeout(() => {
         const id = replyChatId.current;
         if (id) convs.afterReply(id, messagesRef.current);
       }, 0);
-    }, [setMessages, convs]),
+    }, [setMessages, convs, router]),
   });
-  const busy = thinking || speech.active;
+  const busy = thinking || speech.active || goingToFocus;
 
   // El chat deja sitio debajo para el globo mientras Tocorito habla.
   const bubbleRef = useRef<HTMLButtonElement>(null);
@@ -307,6 +324,12 @@ export default function Chat() {
             ...added.map((entry) => ({ change: "added" as const, entry })),
           ];
           if (ev.sip && !sipped) sip();
+          // Resolvió una tarea: queda un Focus pendiente y la lección se empieza a preparar ya.
+          const focus = ev.focus as FocusTopic | null;
+          if (focus) {
+            startFocus(focus, (ev.replies as string[]).join("\n\n"));
+            focusAfterSpeech.current = true;
+          }
           speech.update(ev.replies as string[], true);
         }
       }
@@ -399,7 +422,7 @@ export default function Chat() {
             <h1 className="text-[17px] font-extrabold leading-tight tracking-tight">Tocorito</h1>
             <p className="flex items-center gap-1.5 text-xs text-slate-400">
               <span className={`h-1.5 w-1.5 rounded-full ${busy ? "animate-pulse bg-[#f59e0b]" : "bg-emerald-500"}`} />
-              {thinking && !speech.shown ? STATUS_LABEL[status] : busy ? "Escribiendo…" : "Tu tutor de estudio"}
+              {thinking && !speech.shown ? STATUS_LABEL[status] : goingToFocus ? "Te espera en Focus" : busy ? "Escribiendo…" : "Tu tutor de estudio"}
             </p>
           </div>
           <button
@@ -467,6 +490,12 @@ export default function Chat() {
       </div>
 
       <footer className="shrink-0 border-t border-white/10 bg-black px-3 pb-2 pt-2 sm:px-6">
+        {goingToFocus && (
+          <div className="bubble-in mx-auto mb-2 flex max-w-3xl items-center gap-2 rounded-xl border border-[#e5262b]/60 bg-[#e5262b]/10 px-3 py-2 text-sm text-red-100" role="status">
+            <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-[#e5262b]" />
+            Ahora te toca Focus: mini lección y prueba sobre esta tarea. Te llevo…
+          </div>
+        )}
         {photos.length > 0 && (
           <div className="mx-auto mb-2 flex max-w-3xl gap-2 overflow-x-auto px-1 pt-1.5">
             {photos.map((p, i) => (
