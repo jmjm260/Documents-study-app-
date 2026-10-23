@@ -41,6 +41,9 @@
 - `web/src/app/api/calendar/preview/route.ts` — descarga un feed de Canvas y lo devuelve parseado (no guarda nada).
 - `web/src/app/page.tsx` — chat con Tocorito (mascota y tutor).
 - `web/src/app/api/chat/route.ts` + `web/src/lib/chat.ts` — llamada a OpenAI, prompt y validación.
-- `web/src/app/calendario/page.tsx` — calendario mensual (lunes a domingo) con agenda del día; se conecta pegando la URL del feed o subiendo un `.ics`.
+- `web/src/app/calendario/page.tsx` — calendario mensual con agenda del día, anotaciones propias y conexión a Canvas en una hoja.
 - `web/src/lib/calendar.ts` — cuadrícula del mes y tareas agrupadas por día (+ pruebas).
+- `web/src/lib/entries.ts` — anotaciones propias (tarea, examen, nota), validación y vista unificada con Canvas (+ pruebas). Hoy en localStorage; con cuentas irán a la base de datos.
+- `web/src/components/calendar/` — MonthGrid, DayAgenda, EntryForm, CanvasConnect.
+- `web/src/components/Sheet.tsx` — hoja modal que sube desde abajo (estilo iOS).
 - `web/src/components/TabBar.tsx` — barra de pestañas inferior (Tocorito / Calendario), estilo app móvil.
