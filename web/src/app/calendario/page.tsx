@@ -9,13 +9,17 @@ import Sheet from "@/components/Sheet";
 import { dayKey, monthGrid } from "@/lib/calendar";
 import {
   ENTRIES_CHANGED,
+  hideCanvas,
   itemsByDay,
+  KIND_INFO,
   loadCanvasCache,
   loadEntries,
+  loadHiddenCanvas,
   newEntryId,
   saveCanvasCache,
   saveEntries,
   toCalendarItems,
+  unhideCanvas,
   type CalendarItem,
   type Entry,
   type EntryDraft,
@@ -54,13 +58,15 @@ export default function Calendario() {
   const [selected, setSelected] = useState(todayKey);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [entries, setEntries] = useState<Entry[]>([]);
+  // Cosas de Canvas que el estudiante (o Tocorito) ocultó del calendario.
+  const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [source, setSource] = useState<"url" | "file" | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sheet, setSheet] = useState<SheetState>(null);
 
   const days = useMemo(() => monthGrid(view.year, view.month), [view]);
-  const byDay = useMemo(() => itemsByDay(toCalendarItems(tasks, entries)), [tasks, entries]);
+  const byDay = useMemo(() => itemsByDay(toCalendarItems(tasks, entries, hidden)), [tasks, entries, hidden]);
 
   const loadFromUrl = useCallback(async (url: string) => {
     setLoading(true);
@@ -87,6 +93,7 @@ export default function Calendario() {
   // Al abrir: recuperamos lo guardado en este dispositivo (y lo último de Canvas, al instante).
   useEffect(() => {
     setEntries(loadEntries());
+    setHidden(loadHiddenCanvas());
     // "Ver en calendario" desde el chat abre /calendario?dia=AAAA-MM-DD
     const dia = new URLSearchParams(window.location.search).get("dia");
     if (dia && /^\d{4}-\d{2}-\d{2}$/.test(dia)) {
@@ -98,8 +105,11 @@ export default function Calendario() {
     if (cached.length) setTasks(cached);
     const saved = readFeedUrl();
     if (saved) loadFromUrl(saved);
-    // Si Tocorito anota algo desde el chat, el calendario se entera.
-    const refresh = () => setEntries(loadEntries());
+    // Si Tocorito pone o quita algo desde el chat, el calendario se entera.
+    const refresh = () => {
+      setEntries(loadEntries());
+      setHidden(loadHiddenCanvas());
+    };
     window.addEventListener(ENTRIES_CHANGED, refresh);
     return () => window.removeEventListener(ENTRIES_CHANGED, refresh);
   }, [loadFromUrl]);
@@ -145,6 +155,12 @@ export default function Calendario() {
     setSheet(null);
   }
 
+  /** Papelera de la agenda: lo propio se borra; lo de Canvas se oculta de este calendario. */
+  function removeItem(item: CalendarItem) {
+    if (item.entry) deleteEntry(item.entry.id);
+    else if (item.source === "canvas") hideCanvas(item.id.replace(/^canvas:/, ""));
+  }
+
   function moveMonth(delta: number) {
     setView(({ year, month }) => {
       const d = new Date(year, month + delta, 1);
@@ -163,28 +179,28 @@ export default function Calendario() {
   const closeSheet = useCallback(() => setSheet(null), []);
 
   return (
-    <div className="relative flex h-full flex-col bg-white font-sans text-[#0b1840]">
+    <div className="relative flex h-full flex-col bg-black font-sans text-white [color-scheme:dark]">
       <div className="flex h-1 shrink-0">
         <div className="flex-1 bg-[#1450d8]" />
         <div className="flex-1 bg-white" />
         <div className="flex-1 bg-[#e5262b]" />
       </div>
 
-      <header className="shrink-0 border-b border-slate-200 px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] sm:px-6">
+      <header className="shrink-0 border-b border-white/10 px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] sm:px-6">
         <div className="flex items-center gap-1.5">
           <div className="min-w-0 flex-1">
-            <p className="whitespace-nowrap text-[11px] font-bold uppercase tracking-[0.14em] text-[#1450d8]">
+            <p className="whitespace-nowrap text-[11px] font-bold uppercase tracking-[0.14em] text-[#6ea0ff]">
               Calendario <span className="sm:hidden">· {view.year}</span>
             </p>
             <h1 className="truncate text-xl font-extrabold capitalize tracking-tight sm:text-2xl">
-              {monthName} <span className="hidden font-semibold text-slate-400 sm:inline">{view.year}</span>
+              {monthName} <span className="hidden font-semibold text-slate-500 sm:inline">{view.year}</span>
             </h1>
           </div>
           <button
             onClick={() => setSheet({ type: "canvas" })}
-            className="flex min-h-10 items-center gap-1.5 rounded-full border border-slate-200 px-3 text-xs font-semibold text-slate-600 active:bg-slate-50"
+            className="flex min-h-10 items-center gap-1.5 rounded-full border border-white/15 px-3 text-xs font-semibold text-slate-200 active:bg-white/10"
           >
-            <span className={`h-2 w-2 rounded-full ${source ? "bg-emerald-500" : "bg-slate-300"}`} />
+            <span className={`h-2 w-2 rounded-full ${source ? "bg-emerald-400" : "bg-slate-600"}`} />
             Canvas
           </button>
           <button
@@ -192,7 +208,7 @@ export default function Calendario() {
               setView({ year: today.getFullYear(), month: today.getMonth() });
               setSelected(todayKey);
             }}
-            className="min-h-10 rounded-full border border-slate-200 px-3 text-xs font-semibold text-slate-600 active:bg-slate-50"
+            className="min-h-10 rounded-full border border-white/15 px-3 text-xs font-semibold text-slate-200 active:bg-white/10"
           >
             Hoy
           </button>
@@ -202,7 +218,7 @@ export default function Calendario() {
           </div>
           <button
             onClick={() => setSheet({ type: "new" })}
-            className="ml-1 hidden min-h-10 items-center gap-1 rounded-full bg-[#e5262b] px-4 text-sm font-bold text-white shadow-sm active:bg-[#c81f24] sm:flex"
+            className="ml-1 hidden min-h-10 items-center gap-1 rounded-full bg-[#e5262b] px-4 text-sm font-bold text-white active:bg-[#c81f24] sm:flex"
           >
             <span className="text-lg leading-none">+</span> Añadir
           </button>
@@ -214,10 +230,13 @@ export default function Calendario() {
           <MonthGrid days={days} month={view.month} todayKey={todayKey} selected={selected} byDay={byDay} onSelect={select} />
           <Legend />
         </section>
-        <aside className="bg-[#fbfaf6] pb-24 sm:pb-6 lg:w-[380px] lg:shrink-0 lg:overflow-y-auto lg:border-l lg:border-slate-200">
-          {loading && <p className="px-6 pt-4 text-xs font-medium text-slate-400">Actualizando Canvas… ☕</p>}
+        <aside className="bg-[#0b0b0d] pb-24 sm:pb-6 lg:w-[380px] lg:shrink-0 lg:overflow-y-auto lg:border-l lg:border-white/10">
+          {loading && <p className="px-6 pt-4 text-xs font-medium text-slate-500">Actualizando Canvas…</p>}
           {error && !sheet && (
-            <button onClick={() => setSheet({ type: "canvas" })} className="mx-4 mt-4 block rounded-xl bg-red-50 px-3 py-2 text-left text-sm text-[#b81d21] sm:mx-6">
+            <button
+              onClick={() => setSheet({ type: "canvas" })}
+              className="mx-4 mt-4 block rounded-xl border border-red-400/40 bg-red-500/10 px-3 py-2 text-left text-sm text-red-300 sm:mx-6"
+            >
               {error}
             </button>
           )}
@@ -226,7 +245,7 @@ export default function Calendario() {
             items={byDay.get(selected) ?? []}
             onAdd={() => setSheet({ type: "new" })}
             onEdit={(item: CalendarItem) => item.entry && setSheet({ type: "edit", entry: item.entry })}
-            onDelete={(item: CalendarItem) => item.entry && deleteEntry(item.entry.id)}
+            onDelete={removeItem}
           />
         </aside>
       </div>
@@ -243,7 +262,7 @@ export default function Calendario() {
       </button>
 
       {sheet?.type === "new" && (
-        <Sheet title="Nueva anotación" onClose={closeSheet}>
+        <Sheet title="Nueva anotación" onClose={closeSheet} dark>
           <EntryForm
             initial={{ kind: "tarea", title: "", date: selected, time: null, course: null, notes: "", reminderSec: null }}
             onSave={saveDraft}
@@ -251,15 +270,16 @@ export default function Calendario() {
         </Sheet>
       )}
       {sheet?.type === "edit" && (
-        <Sheet title="Editar anotación" onClose={closeSheet}>
+        <Sheet title="Editar anotación" onClose={closeSheet} dark>
           <EntryForm initial={sheet.entry} onSave={saveDraft} onDelete={() => deleteEntry(sheet.entry.id)} />
         </Sheet>
       )}
       {sheet?.type === "canvas" && (
-        <Sheet title="Calendario de Canvas" onClose={closeSheet}>
+        <Sheet title="Calendario de Canvas" onClose={closeSheet} dark>
           <CanvasConnect
             connected={source}
             count={tasks.length}
+            hiddenCount={tasks.filter((t) => hidden.has(t.id)).length}
             loading={loading}
             error={error}
             onConnect={loadFromUrl}
@@ -268,6 +288,7 @@ export default function Calendario() {
               const url = readFeedUrl();
               if (url) loadFromUrl(url);
             }}
+            onShowHidden={() => unhideCanvas()}
             onDisconnect={disconnect}
           />
         </Sheet>
@@ -278,7 +299,7 @@ export default function Calendario() {
 
 function ArrowButton({ label, d, onClick }: { label: string; d: string; onClick: () => void }) {
   return (
-    <button onClick={onClick} aria-label={label} className="flex h-10 w-10 items-center justify-center rounded-full text-slate-600 active:bg-slate-100">
+    <button onClick={onClick} aria-label={label} className="flex h-10 w-10 items-center justify-center rounded-full text-slate-300 active:bg-white/10">
       <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2.5} aria-hidden>
         <path strokeLinecap="round" strokeLinejoin="round" d={d} />
       </svg>
@@ -287,18 +308,12 @@ function ArrowButton({ label, d, onClick }: { label: string; d: string; onClick:
 }
 
 function Legend() {
-  const items = [
-    ["#1450d8", "Tarea"],
-    ["#e5262b", "Examen"],
-    ["#f59e0b", "Nota"],
-    ["#0b1840", "Evento"],
-  ];
   return (
-    <div className="flex flex-wrap justify-center gap-x-4 gap-y-1 border-b border-slate-200 py-2.5 text-[11px] font-medium text-slate-500 lg:border-b-0">
-      {items.map(([color, label]) => (
-        <span key={label} className="flex items-center gap-1.5">
-          <span className="h-2 w-2 rounded-full" style={{ background: color }} />
-          {label}
+    <div className="flex flex-wrap justify-center gap-x-4 gap-y-1 border-b border-white/10 py-2.5 text-[11px] font-medium text-slate-400 lg:border-b-0">
+      {(Object.keys(KIND_INFO) as (keyof typeof KIND_INFO)[]).map((k) => (
+        <span key={k} className="flex items-center gap-1.5">
+          <span className="h-2 w-2 rounded-full" style={{ background: KIND_INFO[k].ink }} />
+          {KIND_INFO[k].label}
         </span>
       ))}
     </div>

@@ -27,12 +27,17 @@ import {
 } from "@/lib/conversations";
 import {
   addEntries,
+  canvasContextId,
+  hideCanvas,
   KIND_INFO,
   loadCanvasCache,
   loadEntries,
+  loadHiddenCanvas,
   removeEntry,
   restoreEntry,
+  taskIdFromContextId,
   toCalendarItems,
+  unhideCanvas,
   type Entry,
   type EntryDraft,
 } from "@/lib/entries";
@@ -42,18 +47,27 @@ import { visibleReplies } from "@/lib/stream-text";
 
 type Card = { change: "added" | "removed"; entry: Entry };
 
-/** Resumen del calendario (próximos 60 días) que se manda a Tocorito con cada mensaje. */
+/**
+ * Resumen del calendario que se manda a Tocorito con cada mensaje: los últimos 30 días (para poder
+ * quitar cosas que ya pasaron) y los próximos 60. Si hay demasiadas, se priorizan las próximas.
+ */
 function calendarContext(): ChatContext {
   const now = new Date();
   const today = dayKey(now);
+  const from = dayKey(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30));
   const limit = dayKey(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 60));
-  const upcoming = toCalendarItems(loadCanvasCache(), loadEntries())
-    .filter((i) => i.day >= today && i.day <= limit)
-    .sort((a, b) => (a.day + (a.time ?? "")).localeCompare(b.day + (b.time ?? "")))
-    .slice(0, MAX_CONTEXT_ITEMS)
+  const items = toCalendarItems(loadCanvasCache(), loadEntries(), loadHiddenCanvas())
+    .filter((i) => i.day >= from && i.day <= limit)
+    .sort((a, b) => (a.day + (a.time ?? "")).localeCompare(b.day + (b.time ?? "")));
+  const past = items.filter((i) => i.day < today).slice(-15);
+  const next = items.filter((i) => i.day >= today).slice(0, MAX_CONTEXT_ITEMS - past.length);
+  const upcoming = [...past, ...next]
     .map((i) => ({
-      // Solo lo propio lleva id: es lo que Tocorito puede quitar.
-      ...(i.entry ? { id: i.entry.id } : {}),
+      // Cada cosa lleva un id para que Tocorito la pueda quitar (lo de Canvas, ocultar).
+      ...(i.entry ? { id: i.entry.id } : (() => {
+        const id = canvasContextId(i.id.replace(/^canvas:/, ""));
+        return id ? { id } : {};
+      })()),
       date: i.day,
       time: i.time,
       kind: KIND_INFO[i.kind].label.toLowerCase(),
@@ -269,8 +283,26 @@ export default function Chat() {
           const actions = (ev.actions as EntryDraft[]) ?? [];
           const removals = (ev.removals as string[]) ?? [];
           const before = loadEntries();
-          const removed = before.filter((e) => removals.includes(e.id));
+          const removed: Entry[] = before.filter((e) => removals.includes(e.id));
           removed.forEach((e) => removeEntry(e.id));
+          // Lo de Canvas no se borra: se oculta del calendario de la app.
+          const tasks = loadCanvasCache();
+          for (const id of removals) {
+            const taskId = taskIdFromContextId(id);
+            const item = taskId ? toCalendarItems(tasks.filter((t) => t.id === taskId), [])[0] : undefined;
+            if (!taskId || !item) continue;
+            hideCanvas(taskId);
+            removed.push({
+              id,
+              kind: (item.kind === "tarea" ? "tarea" : item.kind) as Entry["kind"],
+              title: item.title,
+              date: item.day,
+              time: item.time,
+              course: item.course,
+              notes: "",
+              reminderSec: null,
+            });
+          }
           const added = actions.length ? addEntries(actions) : [];
           pendingCards.current = [
             ...removed.map((entry) => ({ change: "removed" as const, entry })),
@@ -299,7 +331,9 @@ export default function Chat() {
   function undo(index: number) {
     const m = messages[index];
     if (m?.role !== "action") return;
+    const canvasTask = taskIdFromContextId(m.entry.id);
     if (m.change === "added") removeEntry(m.entry.id);
+    else if (canvasTask) unhideCanvas(canvasTask);
     else restoreEntry(m.entry);
     setMessages((list) => list.map((x, i) => (i === index ? { ...m, undone: true } : x)));
   }

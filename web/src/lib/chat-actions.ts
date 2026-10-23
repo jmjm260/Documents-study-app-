@@ -76,7 +76,8 @@ Reglas:
 Para QUITAR algo del calendario cuando el estudiante te lo pida, escribe un bloque por cada cosa con su id
 (lo ves en la lista como "id: …"), en una sola línea:
 [[QUITAR]]{"id":"el-id-de-la-lista"}[[/QUITAR]]
-- Solo se pueden quitar las cosas que tienen id (las que anotó el estudiante o tú). Las de Canvas no: dilo.
+- Todo lo de la lista tiene id y se puede quitar, también lo que ya pasó. Lo de Canvas (id "canvas-…") solo
+  se oculta del calendario de la app; en Canvas sigue estando: dilo en una frase si quitas algo de Canvas.
 - Si no está claro cuál quiere quitar (hay varias parecidas), pregunta antes. Nunca quites algo que no pidió.
 - Para "cambiar" algo (otra hora, otro día): quita el viejo y añade el nuevo en la misma respuesta.
 - Si te preguntan qué tienen pendiente, responde con lo que ya tiene anotado.`;
@@ -87,13 +88,13 @@ export function calendarData(ctx: ChatContext): string {
   const nextDays = Array.from({ length: 14 }, (_, i) => `${dayName(addDays(today, i))} = ${addDays(today, i)}`).join("; ");
   const items = ctx.upcoming.length
     ? ctx.upcoming
-        .map((i) => `- ${i.date}${i.time ? ` ${i.time}` : " (todo el día)"} · ${i.kind} · ${i.title}${i.course ? ` (${i.course})` : ""}${i.id ? ` · id: ${i.id}` : " · de Canvas"}`)
+        .map((i) => `- ${i.date}${i.time ? ` ${i.time}` : " (todo el día)"} · ${i.kind} · ${i.title}${i.course ? ` (${i.course})` : ""}${i.id ? ` · id: ${i.id}` : ""}${i.id?.startsWith("canvas-") ? " (de Canvas)" : ""}`)
         .join("\n")
     : "- (nada anotado)";
   return `Datos del calendario:
 - Ahora es ${dayName(today)} de ${today.slice(0, 4)}, ${time} (zona horaria: ${ctx.timezone}).
 - Próximos días: ${nextDays}.
-- Lo que ya tiene en el calendario (de Canvas y suyo):
+- Lo que tiene en el calendario (últimos 30 días y próximos 60, de Canvas y suyo):
 ${items}`;
 }
 

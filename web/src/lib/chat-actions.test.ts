@@ -103,11 +103,11 @@ describe("quitar del calendario", () => {
       timezone: "X",
       upcoming: [
         { id: "e1", date: "2026-10-27", time: null, kind: "examen", title: "Física", course: null },
-        { date: "2026-10-28", time: null, kind: "tarea", title: "Ensayo", course: null },
+        { id: "canvas-event-assignment-9", date: "2026-10-28", time: null, kind: "tarea", title: "Ensayo", course: null },
       ],
     })!;
     const text = calendarData(ctx);
     expect(text).toContain("Física · id: e1");
-    expect(text).toContain("Ensayo · de Canvas");
+    expect(text).toContain("Ensayo · id: canvas-event-assignment-9 (de Canvas)");
   });
 });

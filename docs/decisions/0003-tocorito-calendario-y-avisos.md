@@ -17,7 +17,8 @@ y que el calendario tenga alarmas. Las anotaciones viven hoy en el dispositivo (
   guarda y muestra una tarjeta con **Deshacer**.
 - Funciona igual con OpenAI y con Claude local (no depende de "tool calling" de un proveedor).
 - Tocorito puede **crear** (`[[CALENDARIO]]`) y **quitar** (`[[QUITAR]]{"id":…}`) lo que anotó el estudiante o él
-  (recibe el id de cada anotación propia; lo de Canvas no se puede quitar). Para "cambiar", quita y añade.
+  (recibe un id por cada cosa de los últimos 30 días y los próximos 60). Lo de Canvas no se borra: se
+  **oculta** del calendario de la app (`hideCanvas`), y se puede volver a mostrar desde la hoja de Canvas. Para "cambiar", quita y añade.
   Cada cambio sale en el chat con una tarjeta y **Deshacer**. El estudiante también puede quitar con la papelera de la agenda.
 
 **Recordatorios (`web/src/lib/reminders.ts`, `ReminderCenter`):**

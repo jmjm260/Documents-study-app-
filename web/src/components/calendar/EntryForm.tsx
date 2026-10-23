@@ -13,7 +13,7 @@ const PLACEHOLDER: Record<EntryKind, string> = {
 };
 
 const field =
-  "min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-[15px] text-[#0b1840] outline-none focus:border-[#1450d8] focus:ring-2 focus:ring-[#1450d8]/20";
+  "min-h-11 w-full rounded-xl border border-white/15 bg-[#1b1b1e] px-3 text-[15px] text-white outline-none placeholder:text-slate-500 focus:border-[#3b74ff] focus:ring-2 focus:ring-[#3b74ff]/30 [color-scheme:dark]";
 
 export default function EntryForm({
   initial,
@@ -38,7 +38,7 @@ export default function EntryForm({
   return (
     <form onSubmit={submit} className="flex flex-col gap-4 pb-2">
       {/* Tipo: control segmentado como en iOS */}
-      <div className="grid grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1" role="radiogroup" aria-label="Tipo">
+      <div className="grid grid-cols-3 gap-1 rounded-xl bg-white/10 p-1" role="radiogroup" aria-label="Tipo">
         {KINDS.map((k) => (
           <button
             key={k}
@@ -47,16 +47,16 @@ export default function EntryForm({
             aria-checked={draft.kind === k}
             onClick={() => set("kind", k)}
             className={`flex min-h-10 items-center justify-center gap-1.5 rounded-lg text-sm font-semibold transition ${
-              draft.kind === k ? "bg-white text-[#0b1840] shadow-sm" : "text-slate-500"
+              draft.kind === k ? "bg-white/20 text-white" : "text-slate-400"
             }`}
           >
-            <span className="h-2 w-2 rounded-full" style={{ background: KIND_INFO[k].color }} />
+            <span className="h-2 w-2 rounded-full" style={{ background: KIND_INFO[k].ink }} />
             {KIND_INFO[k].label}
           </button>
         ))}
       </div>
 
-      <label className="flex flex-col gap-1.5 text-sm font-semibold text-slate-600">
+      <label className="flex flex-col gap-1.5 text-sm font-semibold text-slate-300">
         Título
         <input
           autoFocus
@@ -69,11 +69,11 @@ export default function EntryForm({
       </label>
 
       <div className="grid grid-cols-2 gap-3">
-        <label className="flex flex-col gap-1.5 text-sm font-semibold text-slate-600">
+        <label className="flex flex-col gap-1.5 text-sm font-semibold text-slate-300">
           Fecha
           <input type="date" required value={draft.date} onChange={(e) => set("date", e.target.value)} className={field} />
         </label>
-        <label className="flex flex-col gap-1.5 text-sm font-semibold text-slate-600">
+        <label className="flex flex-col gap-1.5 text-sm font-semibold text-slate-300">
           Hora
           <input
             type="time"
@@ -81,22 +81,22 @@ export default function EntryForm({
             value={draft.time ?? ""}
             disabled={draft.time === null}
             onChange={(e) => set("time", e.target.value || null)}
-            className={`${field} disabled:bg-slate-50 disabled:text-slate-400`}
+            className={`${field} disabled:bg-white/5 disabled:text-slate-500`}
           />
         </label>
       </div>
 
-      <label className="flex min-h-11 items-center justify-between rounded-xl border border-slate-200 px-3 text-[15px] text-[#0b1840]">
+      <label className="flex min-h-11 items-center justify-between rounded-xl border border-white/15 px-3 text-[15px] text-white">
         Todo el día
         <input
           type="checkbox"
           checked={draft.time === null}
           onChange={(e) => set("time", e.target.checked ? null : "09:00")}
-          className="h-5 w-5 accent-[#1450d8]"
+          className="h-5 w-5 accent-[#3b74ff]"
         />
       </label>
 
-      <label className="flex flex-col gap-1.5 text-sm font-semibold text-slate-600">
+      <label className="flex flex-col gap-1.5 text-sm font-semibold text-slate-300">
         <span className="flex items-center gap-1.5">
           <BellIcon /> Recordatorio
         </span>
@@ -120,13 +120,13 @@ export default function EntryForm({
           </svg>
         </span>
         {draft.reminderSec !== null && draft.time === null && (
-          <span className="text-xs font-normal text-slate-400">En “todo el día”, el aviso cuenta desde las 8:00.</span>
+          <span className="text-xs font-normal text-slate-500">En “todo el día”, el aviso cuenta desde las 8:00.</span>
         )}
       </label>
 
       {draft.kind !== "nota" && (
-        <label className="flex flex-col gap-1.5 text-sm font-semibold text-slate-600">
-          Materia <span className="-mt-1 text-xs font-normal text-slate-400">Opcional</span>
+        <label className="flex flex-col gap-1.5 text-sm font-semibold text-slate-300">
+          Materia <span className="-mt-1 text-xs font-normal text-slate-500">Opcional</span>
           <input
             value={draft.course ?? ""}
             maxLength={ENTRY_LIMITS.course}
@@ -137,8 +137,8 @@ export default function EntryForm({
         </label>
       )}
 
-      <label className="flex flex-col gap-1.5 text-sm font-semibold text-slate-600">
-        {draft.kind === "nota" ? "Nota" : "Detalles"} <span className="-mt-1 text-xs font-normal text-slate-400">Opcional</span>
+      <label className="flex flex-col gap-1.5 text-sm font-semibold text-slate-300">
+        {draft.kind === "nota" ? "Nota" : "Detalles"} <span className="-mt-1 text-xs font-normal text-slate-500">Opcional</span>
         <textarea
           value={draft.notes}
           maxLength={ENTRY_LIMITS.notes}
@@ -149,11 +149,11 @@ export default function EntryForm({
         />
       </label>
 
-      {error && <p className="rounded-xl bg-red-50 px-3 py-2 text-sm font-medium text-[#b81d21]">{error}</p>}
+      {error && <p className="rounded-xl border border-red-400/40 bg-red-500/10 px-3 py-2 text-sm font-medium text-red-300">{error}</p>}
 
       <div className="flex gap-2 pt-1">
         {onDelete && (
-          <button type="button" onClick={onDelete} className="min-h-12 rounded-xl px-4 text-sm font-semibold text-[#e5262b] active:bg-red-50">
+          <button type="button" onClick={onDelete} className="min-h-12 rounded-xl px-4 text-sm font-semibold text-[#ff6b6b] active:bg-red-500/10">
             Eliminar
           </button>
         )}

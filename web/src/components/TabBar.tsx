@@ -12,8 +12,8 @@ const TABS = [
 
 export default function TabBar() {
   const pathname = usePathname();
-  // En el chat (fondo negro) la barra también va oscura; en el calendario, clara.
-  const dark = pathname === "/";
+  // Toda la app es oscura.
+  const dark = true;
   return (
     <nav
       aria-label="Secciones"

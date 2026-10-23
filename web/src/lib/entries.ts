@@ -50,10 +50,11 @@ export function reminderAt(entry: Pick<Entry, "date" | "time" | "reminderSec">):
 }
 
 export const KIND_INFO = {
-  tarea: { label: "Tarea", color: "#1450d8" },
-  examen: { label: "Examen", color: "#e5262b" },
-  nota: { label: "Nota", color: "#f59e0b" },
-  evento: { label: "Evento", color: "#0b1840" },
+  // color: sobre fondo claro · ink: sobre fondo oscuro (más luminoso para que se lea)
+  tarea: { label: "Tarea", color: "#1450d8", ink: "#6ea0ff" },
+  examen: { label: "Examen", color: "#e5262b", ink: "#ff6b6b" },
+  nota: { label: "Nota", color: "#f59e0b", ink: "#fbbf24" },
+  evento: { label: "Evento", color: "#0b1840", ink: "#a5b4fc" },
 } as const;
 
 export type ItemKind = keyof typeof KIND_INFO;
@@ -113,10 +114,10 @@ function canvasTime(task: Task): string | null {
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
-export function toCalendarItems(tasks: Task[], entries: Entry[]): CalendarItem[] {
+export function toCalendarItems(tasks: Task[], entries: Entry[], hiddenCanvas: Set<string> = new Set()): CalendarItem[] {
   const fromCanvas: CalendarItem[] = tasks.flatMap((task) => {
     const day = taskDayKey(task);
-    if (!day) return [];
+    if (!day || hiddenCanvas.has(task.id)) return [];
     return [{
       id: `canvas:${task.id}`,
       source: "canvas",
@@ -226,4 +227,49 @@ export function newEntryId(): string {
 export function restoreEntry(entry: Entry) {
   const list = loadEntries();
   if (!list.some((e) => e.id === entry.id)) saveEntries([...list, entry]);
+}
+
+// --- Ocultar cosas de Canvas ---
+// Lo de Canvas no se puede borrar desde aquí (es de Canvas), pero sí ocultarlo de tu calendario.
+
+const HIDDEN_KEY = "tocorito.hiddenCanvas.v1";
+
+export function loadHiddenCanvas(): Set<string> {
+  try {
+    const data = JSON.parse(localStorage.getItem(HIDDEN_KEY) ?? "[]");
+    return new Set(Array.isArray(data) ? data.filter((x) => typeof x === "string") : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function saveHiddenCanvas(hidden: Set<string>) {
+  try {
+    localStorage.setItem(HIDDEN_KEY, JSON.stringify([...hidden]));
+  } catch {
+    // sin almacenamiento
+  }
+  window.dispatchEvent(new Event(ENTRIES_CHANGED));
+}
+
+export function hideCanvas(taskId: string) {
+  const hidden = loadHiddenCanvas();
+  hidden.add(taskId);
+  saveHiddenCanvas(hidden);
+}
+
+export function unhideCanvas(taskId?: string) {
+  const hidden = loadHiddenCanvas();
+  if (taskId) hidden.delete(taskId);
+  else hidden.clear();
+  saveHiddenCanvas(hidden);
+}
+
+/** Id que ve Tocorito para algo de Canvas ("canvas-<uid>"), o null si el uid tiene caracteres raros. */
+export function canvasContextId(taskId: string): string | null {
+  return /^[A-Za-z0-9-]{1,56}$/.test(taskId) ? `canvas-${taskId}` : null;
+}
+
+export function taskIdFromContextId(id: string): string | null {
+  return id.startsWith("canvas-") ? id.slice("canvas-".length) : null;
 }
