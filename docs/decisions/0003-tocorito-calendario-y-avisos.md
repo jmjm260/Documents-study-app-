@@ -19,7 +19,9 @@ y que el calendario tenga alarmas. Las anotaciones viven hoy en el dispositivo (
 - Tocorito solo puede **crear**; borrar o editar se hace en la pestaña Calendario.
 
 **Recordatorios (`web/src/lib/reminders.ts`, `ReminderCenter`):**
-- Cada anotación tiene `reminder` (minutos antes o null). En "todo el día" cuenta desde las 08:00.
+- Cada anotación tiene `reminderSec` (segundos antes, 0 = justo a la hora, o null). La hora admite segundos
+  ("HH:MM:SS"), así que se pueden poner alarmas como "dentro de 15 segundos". En "todo el día" cuenta desde las 08:00.
+  Las anotaciones guardadas con `reminder` en minutos se convierten solas.
 - En la web: aviso dentro de la app + notificación del sistema si el usuario da permiso.
   **Solo suenan con la app abierta.**
 

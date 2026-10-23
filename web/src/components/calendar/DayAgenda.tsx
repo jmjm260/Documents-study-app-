@@ -61,11 +61,11 @@ function AgendaRow({ item, onEdit }: { item: CalendarItem; onEdit: (item: Calend
           <span>·</span>
           <span>{item.source === "canvas" ? "Canvas" : "Personal"}</span>
           {item.contextLevel && <><span>·</span><span>{LEVEL_LABEL[item.contextLevel]}</span></>}
-          {item.entry?.reminder != null && (
+          {item.entry?.reminderSec != null && (
             <span className="flex items-center gap-0.5 font-semibold text-[#1450d8]">
               <span>·</span>
               <BellIcon className="h-3 w-3" />
-              {describeReminder(item.entry.reminder)}
+              {describeReminder(item.entry.reminderSec)}
             </span>
           )}
         </p>

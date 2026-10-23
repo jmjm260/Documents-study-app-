@@ -10,7 +10,7 @@ const entry = (over: Partial<Entry> = {}): Entry => ({
   time: "09:30",
   course: null,
   notes: "",
-  reminder: 30,
+  reminderSec: 1800,
   ...over,
 });
 
@@ -37,9 +37,17 @@ describe("dueReminders", () => {
   });
 });
 
+describe("alarmas al segundo", () => {
+  it("una alarma a las 09:30:15 suena justo a esa hora", () => {
+    const alarm = entry({ time: "09:30:15", reminderSec: 0 });
+    expect(dueReminders([alarm], new Date("2026-10-28T09:30:14"), new Set())).toHaveLength(0);
+    expect(dueReminders([alarm], new Date("2026-10-28T09:30:15"), new Set())).toHaveLength(1);
+  });
+});
+
 describe("nextReminderAt", () => {
   it("devuelve el aviso futuro más cercano", () => {
-    const list = [entry({ id: "a", time: "12:00" }), entry({ id: "b", time: "10:00" }), entry({ id: "c", reminder: null })];
+    const list = [entry({ id: "a", time: "12:00" }), entry({ id: "b", time: "10:00" }), entry({ id: "c", reminderSec: null })];
     expect(nextReminderAt(list, at("08:00"))?.getHours()).toBe(9); // 10:00 - 30 min
   });
 });

@@ -128,7 +128,7 @@ export default function Calendario() {
   }
 
   function saveDraft(draft: EntryDraft) {
-    if (draft.reminder !== null) requestNotificationPermission();
+    if (draft.reminderSec !== null) requestNotificationPermission();
     if (sheet?.type === "edit") {
       updateEntries(entries.map((e) => (e.id === sheet.entry.id ? { ...draft, id: e.id } : e)));
     } else {
@@ -244,7 +244,7 @@ export default function Calendario() {
       {sheet?.type === "new" && (
         <Sheet title="Nueva anotación" onClose={closeSheet}>
           <EntryForm
-            initial={{ kind: "tarea", title: "", date: selected, time: null, course: null, notes: "", reminder: null }}
+            initial={{ kind: "tarea", title: "", date: selected, time: null, course: null, notes: "", reminderSec: null }}
             onSave={saveDraft}
           />
         </Sheet>

@@ -11,7 +11,7 @@ export default function ActionCard({ entry, undone, onUndo }: { entry: Entry; un
   const info = KIND_INFO[entry.kind];
   const date = new Date(`${entry.date}T00:00:00`).toLocaleDateString("es", { weekday: "long", day: "numeric", month: "long" });
   const [askPermission, setAskPermission] = useState(
-    () => entry.reminder !== null && typeof Notification !== "undefined" && Notification.permission === "default"
+    () => entry.reminderSec !== null && typeof Notification !== "undefined" && Notification.permission === "default"
   );
 
   return (
@@ -32,9 +32,9 @@ export default function ActionCard({ entry, undone, onUndo }: { entry: Entry; un
             {entry.time ?? "Todo el día"}
             {entry.course && ` · ${entry.course}`}
           </p>
-          {entry.reminder !== null && (
+          {entry.reminderSec !== null && (
             <p className="mt-1 flex items-center gap-1 text-xs font-semibold text-[#1450d8]">
-              <BellIcon className="h-3 w-3" /> Aviso {describeReminder(entry.reminder).toLowerCase()}
+              <BellIcon className="h-3 w-3" /> Aviso {describeReminder(entry.reminderSec).toLowerCase()}
             </p>
           )}
         </div>

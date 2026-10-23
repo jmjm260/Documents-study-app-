@@ -9,7 +9,7 @@ const draft = (over: Partial<EntryDraft> = {}): EntryDraft => ({
   time: "09:30",
   course: " MAT 201 ",
   notes: " Llevar calculadora ",
-  reminder: 30,
+  reminderSec: 1800,
   ...over,
 });
 
@@ -17,7 +17,7 @@ describe("validateEntry", () => {
   it("limpia espacios y acepta una entrada correcta", () => {
     expect(validateEntry(draft())).toEqual({
       ok: true,
-      value: { kind: "examen", title: "Parcial de cálculo", date: "2026-10-28", time: "09:30", course: "MAT 201", notes: "Llevar calculadora", reminder: 30 },
+      value: { kind: "examen", title: "Parcial de cálculo", date: "2026-10-28", time: "09:30", course: "MAT 201", notes: "Llevar calculadora", reminderSec: 1800 },
     });
   });
 
@@ -32,9 +32,10 @@ describe("validateEntry", () => {
     ["título larguísimo", { title: "x".repeat(121) }],
     ["fecha rota", { date: "28/10/2026" }],
     ["hora rota", { time: "25:00" }],
+    ["segundos rotos", { time: "09:30:61" }],
     ["tipo inventado", { kind: "fiesta" as never }],
-    ["recordatorio negativo", { reminder: -5 }],
-    ["recordatorio con decimales", { reminder: 2.5 }],
+    ["recordatorio negativo", { reminderSec: -5 }],
+    ["recordatorio con decimales", { reminderSec: 2.5 }],
     ["título que no es texto", { title: 42 as never }],
   ])("rechaza: %s", (_, over) => {
     expect(validateEntry(draft(over)).ok).toBe(false);
@@ -73,29 +74,36 @@ describe("toCalendarItems + itemsByDay", () => {
 
 describe("recordatorios", () => {
   it("calcula cuándo avisar: 30 min antes de las 09:30", () => {
-    const at = reminderAt({ date: "2026-10-28", time: "09:30", reminder: 30 });
+    const at = reminderAt({ date: "2026-10-28", time: "09:30", reminderSec: 1800 });
     expect(at?.getHours()).toBe(9);
     expect(at?.getMinutes()).toBe(0);
   });
 
   it("en 'todo el día' cuenta desde las 08:00", () => {
-    const at = reminderAt({ date: "2026-10-28", time: null, reminder: 60 });
+    const at = reminderAt({ date: "2026-10-28", time: null, reminderSec: 3600 });
     expect(at?.getHours()).toBe(7);
   });
 
   it("sin recordatorio no hay aviso", () => {
-    expect(reminderAt({ date: "2026-10-28", time: "09:30", reminder: null })).toBeNull();
+    expect(reminderAt({ date: "2026-10-28", time: "09:30", reminderSec: null })).toBeNull();
   });
 
   it("lo describe en palabras", () => {
-    expect([0, 10, 60, 90, 120, 1440].map(describeReminder)).toEqual([
-      "A la hora", "10 min antes", "1 hora antes", "1 h 30 min antes", "2 horas antes", "1 día antes",
+    expect([0, 15, 90, 600, 3600, 5400, 7200, 86400].map(describeReminder)).toEqual([
+      "A la hora", "15 s antes", "1 min 30 s antes", "10 min antes", "1 hora antes", "1 h 30 min antes", "2 horas antes", "1 día antes",
     ]);
   });
 
-  it("las entradas viejas sin recordatorio siguen siendo válidas", () => {
+  it("alarma al segundo: 09:30:15 justo a esa hora", () => {
+    const at = reminderAt({ date: "2026-10-28", time: "09:30:15", reminderSec: 0 });
+    expect([at?.getHours(), at?.getMinutes(), at?.getSeconds()]).toEqual([9, 30, 15]);
+  });
+
+  it("las entradas viejas siguen valiendo: sin aviso, o con 'reminder' en minutos", () => {
     const old = { kind: "nota", title: "x", date: "2026-10-28", time: null, course: null, notes: "" };
-    const r = validateEntry(old);
-    expect(r.ok && r.value.reminder).toBeNull();
+    const a = validateEntry(old);
+    const b = validateEntry({ ...old, reminder: 30 });
+    expect(a.ok && a.value.reminderSec).toBeNull();
+    expect(b.ok && b.value.reminderSec).toBe(1800);
   });
 });

@@ -22,8 +22,10 @@ function calendarContext(): ChatContext {
     .sort((a, b) => (a.day + (a.time ?? "")).localeCompare(b.day + (b.time ?? "")))
     .slice(0, MAX_CONTEXT_ITEMS)
     .map((i) => ({ date: i.day, time: i.time, kind: KIND_INFO[i.kind].label.toLowerCase(), title: i.title, course: i.course }));
-  const hhmm = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
-  return { now: `${today}T${hhmm}`, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, upcoming };
+  const pad = (n: number) => String(n).padStart(2, "0");
+  // Con segundos, para que Tocorito pueda poner alarmas como "dentro de 15 segundos".
+  const clock = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+  return { now: `${today}T${clock}`, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, upcoming };
 }
 
 /** Lo que se manda a la IA: las tarjetas se convierten en una nota para que Tocorito las recuerde. */

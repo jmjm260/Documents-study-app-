@@ -9,14 +9,14 @@ describe("extractActions", () => {
     const r = extractActions(`Listo, anotado ☕\n${block(exam)}`);
     expect(r.text).toBe("Listo, anotado ☕");
     expect(r.actions).toEqual([
-      { kind: "examen", title: "Prueba de física", date: "2026-10-28", time: "09:30", course: "FIS 210", notes: "", reminder: 30 },
+      { kind: "examen", title: "Prueba de física", date: "2026-10-28", time: "09:30", course: "FIS 210", notes: "", reminderSec: 1800 },
     ]);
     expect(r.rejected).toBe(0);
   });
 
   it("acepta campos que falten (todo el día, sin aviso)", () => {
     const r = extractActions(block({ tipo: "nota", titulo: "Llevar bata", fecha: "2026-10-27" }));
-    expect(r.actions[0]).toMatchObject({ time: null, reminder: null, course: null, notes: "" });
+    expect(r.actions[0]).toMatchObject({ time: null, reminderSec: null, course: null, notes: "" });
   });
 
   it("rechaza bloques rotos o inválidos sin romper el resto", () => {
@@ -30,6 +30,11 @@ describe("extractActions", () => {
     const r = extractActions(Array.from({ length: 8 }, () => block(exam)).join("\n"));
     expect(r.actions).toHaveLength(MAX_ACTIONS);
     expect(r.rejected).toBe(3);
+  });
+
+  it("alarma relativa con segundos y aviso justo a la hora", () => {
+    const r = extractActions(block({ tipo: "nota", titulo: "Alarma", fecha: "2026-10-23", hora: "15:02:30", recordatorio_seg: 0 }));
+    expect(r.actions[0]).toMatchObject({ time: "15:02:30", reminderSec: 0 });
   });
 
   it("texto sin bloques queda igual", () => {
@@ -49,7 +54,7 @@ describe("validateContext", () => {
       ],
     });
     expect(ctx).toEqual({
-      now: "2026-10-23T14:05",
+      now: "2026-10-23T14:05:33",
       timezone: "America/New_York",
       upcoming: [
         { date: "2026-10-27", time: "12:00", kind: "tarea", title: "Lab de fluidos", course: "FIS 210" },

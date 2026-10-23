@@ -77,6 +77,7 @@ export default function EntryForm({
           Hora
           <input
             type="time"
+            step={1}
             value={draft.time ?? ""}
             disabled={draft.time === null}
             onChange={(e) => set("time", e.target.value || null)}
@@ -101,12 +102,12 @@ export default function EntryForm({
         </span>
         <span className="relative">
           <select
-            value={draft.reminder ?? ""}
-            onChange={(e) => set("reminder", e.target.value === "" ? null : Number(e.target.value))}
+            value={draft.reminderSec ?? ""}
+            onChange={(e) => set("reminderSec", e.target.value === "" ? null : Number(e.target.value))}
             className={`${field} appearance-none pr-9`}
           >
             <option value="">Sin aviso</option>
-            {[...new Set([...REMINDER_PRESETS, ...(draft.reminder !== null ? [draft.reminder] : [])])]
+            {[...new Set([...REMINDER_PRESETS, ...(draft.reminderSec !== null ? [draft.reminderSec] : [])])]
               .sort((a, b) => a - b)
               .map((m) => (
                 <option key={m} value={m}>
@@ -118,7 +119,7 @@ export default function EntryForm({
             <path strokeLinecap="round" strokeLinejoin="round" d="M6 9l6 6 6-6" />
           </svg>
         </span>
-        {draft.reminder !== null && draft.time === null && (
+        {draft.reminderSec !== null && draft.time === null && (
           <span className="text-xs font-normal text-slate-400">En “todo el día”, el aviso cuenta desde las 8:00.</span>
         )}
       </label>

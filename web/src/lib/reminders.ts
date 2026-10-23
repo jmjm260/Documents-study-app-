@@ -33,7 +33,7 @@ export function reminderText(entry: Entry): { title: string; body: string } {
   const kind = KIND_INFO[entry.kind].label;
   return {
     title: `⏰ ${kind}: ${entry.title}`,
-    body: entry.reminder === 0 ? `Es ahora (${when}).` : `Empieza ${when} · aviso ${describeReminder(entry.reminder ?? 0)}.`,
+    body: entry.reminderSec === 0 ? `Es ahora (${when}).` : `Empieza ${when} · aviso ${describeReminder(entry.reminderSec ?? 0)}.`,
   };
 }
 
