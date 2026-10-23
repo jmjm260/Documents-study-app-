@@ -21,8 +21,9 @@ razona la IA antes de responder.
     **Procesos pre-calentados**: uno esperando por nivel, así el arranque no se nota.
 - **Streaming** NDJSON desde `/api/chat` con estados *Preparando… / Pensando… / Generando
   respuesta…*. Nunca se muestra el razonamiento interno. Sin esperas artificiales.
-- **Preferencias**: `defaultReasoningLevel` (en el dispositivo; con cuentas irá al perfil) y nivel
-  por conversación (se puede cambiar a mitad; no se regeneran respuestas anteriores).
+- **Preferencias**: el nivel elegido se recuerda solo (`defaultReasoningLevel`, en el dispositivo; con
+  cuentas irá al perfil). Se puede cambiar a mitad de conversación; no se regeneran respuestas anteriores.
+  La tarjeta del selector solo muestra título, deslizador y nombres (sin textos extra).
 - **Planes y costes**: `PLAN_POLICY` centraliza qué niveles tiene cada plan (hoy todos);
   `recordUsage` es el punto para medir tokens y tiempos por nivel.
 - Longitud de respuesta ≠ razonamiento: Tocorito sigue respondiendo corto en todos los niveles.

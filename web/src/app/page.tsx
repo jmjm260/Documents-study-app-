@@ -157,9 +157,11 @@ export default function Chat() {
     }
   }
 
-  function makeDefault() {
-    savePrefs({ defaultReasoningLevel: level });
-    setDefaultLevel(level);
+  // Como en ChatGPT: el nivel elegido se queda guardado para las próximas veces.
+  function chooseLevel(next: ReasoningLevel) {
+    setLevel(next);
+    setDefaultLevel(next);
+    savePrefs({ defaultReasoningLevel: next });
   }
 
   function undo(id: string) {
@@ -271,12 +273,10 @@ export default function Chat() {
           {/* Nivel de razonamiento, a la derecha de la barra (como en ChatGPT) */}
           <LevelPicker
             value={level}
-            defaultLevel={defaultLevel}
             available={levels.map((l) => l.level)}
             noRealReasoning={levels.filter((l) => !l.realReasoning).map((l) => l.level)}
             disabled={thinking}
-            onChange={setLevel}
-            onMakeDefault={makeDefault}
+            onChange={chooseLevel}
           />
           <button
             disabled={thinking || !input.trim()}

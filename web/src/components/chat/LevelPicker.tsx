@@ -1,28 +1,24 @@
 "use client";
 
 // Selector de nivel de razonamiento dentro de la barra de mensaje (estilo ChatGPT):
-// un botón "Medio ⌄" que abre una tarjeta con un deslizador de 3 posiciones.
+// un botón "Medio ⌄" que abre una tarjeta con un deslizador de 3 posiciones. El nivel elegido se recuerda.
 // Solo elige el NIVEL; qué modelo y parámetros se usan lo decide el servidor.
 import { useEffect, useRef, useState } from "react";
-import { LEVEL_INFO, REASONING_LEVELS, SLOWER_LEVELS_WARNING, type ReasoningLevel } from "@/lib/ai/reasoning";
+import { LEVEL_INFO, REASONING_LEVELS, type ReasoningLevel } from "@/lib/ai/reasoning";
 
 export default function LevelPicker({
   value,
-  defaultLevel,
   available,
   noRealReasoning,
   disabled,
   onChange,
-  onMakeDefault,
 }: {
   value: ReasoningLevel;
-  defaultLevel: ReasoningLevel;
   available: readonly ReasoningLevel[];
   /** Niveles que con el modelo actual no cambian de verdad la profundidad. */
   noRealReasoning: readonly ReasoningLevel[];
   disabled: boolean;
   onChange: (level: ReasoningLevel) => void;
-  onMakeDefault: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -67,7 +63,7 @@ export default function LevelPicker({
         <div
           role="dialog"
           aria-label="Esfuerzo de razonamiento"
-          className="absolute bottom-full right-0 z-30 mb-2 w-[min(19rem,100%)] rounded-2xl border border-slate-200 bg-white p-4 shadow-xl"
+          className="absolute bottom-full right-0 z-30 mb-2 w-[min(17rem,100%)] rounded-2xl border border-slate-200 bg-white p-4 pb-3 shadow-xl"
         >
           <p className="text-center text-[15px] font-semibold text-[#0b1840]">{LEVEL_INFO[value].label}</p>
 
@@ -103,26 +99,16 @@ export default function LevelPicker({
           </div>
           <div className="mt-1.5 flex justify-between px-1 text-[11px] font-medium text-slate-400">
             {levels.map((l) => (
-              <button key={l} type="button" onClick={() => onChange(l)} className={l === value ? "text-[#1450d8]" : "hover:text-slate-600"}>
+              <button key={l} type="button" title={LEVEL_INFO[l].description} onClick={() => onChange(l)} className={l === value ? "text-[#1450d8]" : "hover:text-slate-600"}>
                 {LEVEL_INFO[l].label}
               </button>
             ))}
           </div>
 
-          <p className="mt-3 text-xs leading-snug text-slate-600">{LEVEL_INFO[value].description}</p>
-          {value !== "instant" && <p className="mt-1 text-[11px] leading-snug text-slate-400">{SLOWER_LEVELS_WARNING}</p>}
+          {/* Solo si el modelo actual no cambia de verdad (p. ej. un modelo de OpenAI sin razonamiento). */}
           {noRealReasoning.includes(value) && (
-            <p className="mt-1 text-[11px] leading-snug text-amber-700">Este modelo no permite cambiar la profundidad de razonamiento.</p>
+            <p className="mt-2 text-center text-[11px] text-amber-700">Este modelo no cambia su razonamiento.</p>
           )}
-          <div className="mt-3 border-t border-slate-100 pt-2.5 text-xs">
-            {value === defaultLevel ? (
-              <span className="text-slate-400">Es tu nivel predeterminado.</span>
-            ) : (
-              <button type="button" onClick={onMakeDefault} className="font-semibold text-[#1450d8] hover:underline">
-                Usar siempre este nivel
-              </button>
-            )}
-          </div>
         </div>
       )}
     </div>
