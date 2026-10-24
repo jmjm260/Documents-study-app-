@@ -9,13 +9,16 @@ import TocoritoFigure from "@/components/chat/TocoritoFigure";
 import RichText from "@/components/RichText";
 import { stepSeconds } from "@/lib/focus";
 import { FOCUS_EVENT, loadFocus, prefetchLesson, saveFocus, type FocusState } from "@/lib/focus-store";
+import { saveSolutionImage } from "@/lib/solution-image";
 
 export default function FocusPage() {
   const router = useRouter();
   // undefined = aún leyendo el almacenamiento; null = no hay nada pendiente.
   const [focus, setFocus] = useState<FocusState | null | undefined>(undefined);
-  const [finished, setFinished] = useState<string | null>(null);
+  // Al terminar se guarda aquí lo resuelto: la imagen de la solución se desbloquea después del Focus.
+  const [finished, setFinished] = useState<Pick<FocusState, "topic" | "task" | "solution"> | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     const sync = () => setFocus(loadFocus());
@@ -40,8 +43,21 @@ export default function FocusPage() {
   }
 
   function complete() {
-    setFinished(focus?.topic ?? "");
+    if (focus) setFinished({ topic: focus.topic, task: focus.task, solution: focus.solution });
     saveFocus(null);
+  }
+
+  async function saveImage() {
+    if (!finished) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await saveSolutionImage({ topic: finished.topic, task: finished.task, text: finished.solution });
+    } catch {
+      setError("No pude crear la imagen.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   if (focus === undefined) return <Shell />;
@@ -53,9 +69,22 @@ export default function FocusPage() {
           <TocoritoFigure height={140} sipping />
           <h2 className="mt-4 text-2xl font-extrabold tracking-tight">Focus completado</h2>
           <p className="mt-2 max-w-sm text-sm text-slate-400">
-            Mira tú… ahora sí sabes lo que entregas{finished ? ` de ${finished}` : ""}. Ya puedes volver al chat.
+            Mira tú… ahora sí sabes lo que entregas de {finished.topic}. Ya puedes volver al chat.
           </p>
-          <button onClick={() => router.push("/")} className="mt-6 min-h-12 w-full max-w-xs rounded-xl bg-[#1450d8] text-[15px] font-bold">
+          {finished.solution && (
+            <button
+              onClick={saveImage}
+              disabled={saving}
+              className="mt-6 min-h-12 w-full max-w-xs rounded-xl bg-[#e5262b] text-[15px] font-bold disabled:opacity-60"
+            >
+              {saving ? "Creando imagen…" : "Guardar imagen de la solución"}
+            </button>
+          )}
+          {error && <p className="mt-2 text-sm text-red-300">{error}</p>}
+          <button
+            onClick={() => router.push("/")}
+            className={`${finished.solution ? "mt-2 border border-white/15" : "mt-6 bg-[#1450d8]"} min-h-12 w-full max-w-xs rounded-xl text-[15px] font-bold`}
+          >
             Volver al chat
           </button>
         </Center>

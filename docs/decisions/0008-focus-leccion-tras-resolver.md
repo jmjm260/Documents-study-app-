@@ -23,5 +23,13 @@ aprenda lo que se le resolvió: una mini lección de 2–4 minutos y una prueba 
 ## Límites conocidos
 
 - En la web, borrar los datos del navegador quita el bloqueo. Con cuentas, el Focus pendiente irá al servidor.
-- Imágenes de la tarea "lista para entregar": **pendiente**. Necesita un servicio de generación de
-  imágenes (ni Claude local ni el chat actual las crean) y tiene costo por imagen; se decide aparte.
+
+## Imagen de la solución (añadido)
+
+- Se desbloquea al terminar el Focus: botón "Guardar imagen de la solución".
+- Se dibuja en el dispositivo con `<canvas>` (`lib/solution-image.ts`): sin IA de imágenes, sin dependencias,
+  **costo $0**, y el texto es exactamente el que escribió Tocorito. Las fórmulas LaTeX se pasan a símbolos (x², √, ½…).
+- Descartado: IA de imágenes (GPT Image, Gemini/Nano Banana): ~$0.03–0.21 por imagen y se equivocan
+  con números y fórmulas. Descartado también `html-to-image`: depende de `foreignObject`, que falla en Safari/iPhone.
+- En el móvil abre el menú Compartir (Guardar en Fotos); si no hay, descarga el PNG. En la app nativa
+  (Capacitor) habrá que usar su plugin de compartir/archivos.
