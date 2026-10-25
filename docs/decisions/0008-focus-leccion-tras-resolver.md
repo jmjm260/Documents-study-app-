@@ -36,6 +36,8 @@ aprenda lo que se le resolvió: una mini lección de 2–4 minutos y una prueba 
 - La app crea una prueba de repaso pendiente (una por clase) y la prepara ya: `POST /api/focus/review`
   recibe las lecciones de esa clase (máx. 12) y devuelve 5–8 preguntas hechas solo con ellas.
 - El repaso no bloquea el chat: aviso en el chat + punto rojo en la pestaña Focus.
+- Lo ya hecho se puede **repetir**: lecciones (pasos + prueba) y repasos terminados (se guardan con `doneAt`
+  en vez de borrarse). Al repetir no hay cuenta atrás, y el progreso no se guarda (siempre empieza de cero).
 
 ## Imagen de la solución (añadido)
 

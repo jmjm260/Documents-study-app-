@@ -5,6 +5,7 @@
 //    saltar (tiempo mínimo por paso; la prueba acaba cuando aciertas todas). El chat queda bloqueado.
 // 2) Biblioteca: las lecciones terminadas se guardan por clase y se pueden releer.
 // 3) Pruebas de repaso: si anotas un examen de una clase con lecciones, Tocorito te deja una aquí.
+// Lo ya hecho (lecciones y repasos) se puede repetir igual, pero sin esperas: ya lo leíste una vez.
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import TocoritoFigure from "@/components/chat/TocoritoFigure";
@@ -15,6 +16,7 @@ import {
   deleteLesson,
   finishReview,
   FOCUS_EVENT,
+  isPendingReview,
   loadFocus,
   loadLibrary,
   loadReviews,
@@ -31,9 +33,11 @@ import { saveSolutionImage } from "@/lib/solution-image";
 type View =
   | { kind: "home" }
   | { kind: "lesson"; id: string }
+  | { kind: "practice"; id: string }
   | { kind: "review"; id: string }
   | { kind: "focusDone"; saved: SavedLesson | null; topic: string }
-  | { kind: "reviewDone"; course: string };
+  | { kind: "practiceDone"; id: string; topic: string }
+  | { kind: "reviewDone"; course: string; retake: boolean };
 
 export default function FocusPage() {
   const router = useRouter();
@@ -87,7 +91,9 @@ export default function FocusPage() {
           <TocoritoFigure height={140} sipping />
           <h2 className="mt-4 text-2xl font-extrabold tracking-tight">Repaso terminado</h2>
           <p className="mt-2 max-w-sm text-sm text-slate-400">
-            {view.course}: repasado. Si suspendes ahora, ya no es culpa mía. 🐦
+            {view.retake
+              ? `${view.course}, otra vez. Mira tú, repasando por gusto. Queda guardado por si quieres más. 🐦`
+              : `${view.course}: repasado. Si suspendes ahora, ya no es culpa mía. Queda guardado aquí por si quieres repetirlo. 🐦`}
           </p>
           <button onClick={() => setView({ kind: "home" })} className="mt-6 min-h-12 w-full max-w-xs rounded-xl bg-[#1450d8] text-[15px] font-bold">
             Volver a Focus
@@ -97,17 +103,49 @@ export default function FocusPage() {
     );
   }
 
+  if (view.kind === "practiceDone") {
+    return (
+      <Shell>
+        <Center>
+          <TocoritoFigure height={140} sipping />
+          <h2 className="mt-4 text-2xl font-extrabold tracking-tight">Lección repetida</h2>
+          <p className="mt-2 max-w-sm text-sm text-slate-400">{view.topic}, otra vez. Ni yo repaso tanto. 🐦</p>
+          <button onClick={() => setView({ kind: "lesson", id: view.id })} className="mt-6 min-h-12 w-full max-w-xs rounded-xl bg-[#1450d8] text-[15px] font-bold">
+            Volver a la lección
+          </button>
+        </Center>
+      </Shell>
+    );
+  }
+
   if (view.kind === "review") {
     const review = reviews.find((r) => r.id === view.id);
     if (review) {
+      // Ya hecho: se repite sin guardar el progreso (empieza siempre desde la primera pregunta).
+      const retake = !isPendingReview(review);
       return (
         <ReviewRunner
+          key={review.id}
           review={review}
+          retake={retake}
           onBack={() => setView({ kind: "home" })}
           onDone={() => {
-            finishReview(review.id);
-            setView({ kind: "reviewDone", course: review.course });
+            if (!retake) finishReview(review.id);
+            setView({ kind: "reviewDone", course: review.course, retake });
           }}
+        />
+      );
+    }
+  }
+
+  if (view.kind === "practice") {
+    const saved = library.find((l) => l.id === view.id);
+    if (saved) {
+      return (
+        <PracticeLesson
+          saved={saved}
+          onBack={() => setView({ kind: "lesson", id: saved.id })}
+          onDone={() => setView({ kind: "practiceDone", id: saved.id, topic: saved.topic })}
         />
       );
     }
@@ -125,6 +163,12 @@ export default function FocusPage() {
             ))}
           </div>
           <div className="mt-6 flex flex-col items-center gap-2 pb-2">
+            <button
+              onClick={() => setView({ kind: "practice", id: saved.id })}
+              className="min-h-12 w-full max-w-xs rounded-xl bg-[#1450d8] text-[15px] font-bold"
+            >
+              Repetir lección y prueba
+            </button>
             {saved.solution && <SaveImageButton lesson={saved} />}
             <button
               onClick={() => {
@@ -211,8 +255,11 @@ function MandatoryFocus({ focus, onDone }: { focus: FocusState; onDone: (saved: 
   );
 }
 
-function ReviewRunner({ review, onBack, onDone }: { review: Review; onBack: () => void; onDone: () => void }) {
+function ReviewRunner({ review, retake, onBack, onDone }: { review: Review; retake: boolean; onBack: () => void; onDone: () => void }) {
   const [error, setError] = useState<string | null>(null);
+  // Al repetir, el progreso vive solo en pantalla (el repaso guardado no cambia).
+  const [retakePassed, setRetakePassed] = useState<number[]>([]);
+  const passed = retake ? retakePassed : review.passed;
   const needsQuiz = !review.quiz && !error;
   useEffect(() => {
     if (!needsQuiz) return;
@@ -242,17 +289,53 @@ function ReviewRunner({ review, onBack, onDone }: { review: Review; onBack: () =
   }
   const quiz = review.quiz;
   return (
-    <Shell subtitle={subtitle} progress={review.passed.length / quiz.length} onBack={onBack}>
+    <Shell subtitle={subtitle} progress={passed.length / quiz.length} onBack={onBack}>
       <Quiz
-        label="Repaso"
+        label={retake ? "Repaso (otra vez)" : "Repaso"}
         questions={quiz}
-        passed={review.passed}
+        passed={passed}
         onPass={(i) => {
-          const passed = [...review.passed, i];
-          if (passed.length >= quiz.length) onDone();
-          else updateReview({ ...review, passed });
+          const next = [...passed, i];
+          if (next.length >= quiz.length) onDone();
+          else if (retake) setRetakePassed(next);
+          else updateReview({ ...review, passed: next });
         }}
       />
+    </Shell>
+  );
+}
+
+/** Repetir una lección ya hecha: mismos pasos y misma prueba, pero sin cuenta atrás. */
+function PracticeLesson({ saved, onBack, onDone }: { saved: SavedLesson; onBack: () => void; onDone: () => void }) {
+  const [step, setStep] = useState(0);
+  const [phase, setPhase] = useState<"lesson" | "quiz">("lesson");
+  const [passed, setPassed] = useState<number[]>([]);
+  const lesson = saved.lesson;
+  const done = phase === "quiz" ? lesson.steps.length : step;
+  return (
+    <Shell subtitle={`${saved.course} · ${saved.topic} (repaso)`} progress={done / (lesson.steps.length + 1)} onBack={onBack}>
+      {phase === "lesson" ? (
+        <LessonStep
+          key={step}
+          index={step}
+          count={lesson.steps.length}
+          title={lesson.title}
+          step={lesson.steps[step]}
+          seconds={0}
+          onNext={() => (step + 1 < lesson.steps.length ? setStep(step + 1) : setPhase("quiz"))}
+        />
+      ) : (
+        <Quiz
+          label="Prueba rápida (otra vez)"
+          questions={lesson.quiz}
+          passed={passed}
+          onPass={(i) => {
+            const next = [...passed, i];
+            if (next.length >= lesson.quiz.length) onDone();
+            else setPassed(next);
+          }}
+        />
+      )}
     </Shell>
   );
 }
@@ -287,14 +370,16 @@ function Home({
   const byCourse = new Map<string, SavedLesson[]>();
   for (const l of [...library].sort((a, b) => b.completedAt - a.completedAt)) byCourse.set(l.course, [...(byCourse.get(l.course) ?? []), l]);
   const dateFmt = new Intl.DateTimeFormat("es", { day: "numeric", month: "short" });
+  const pending = reviews.filter(isPendingReview);
+  const done = reviews.filter((r) => !isPendingReview(r)).sort((a, b) => (b.doneAt ?? 0) - (a.doneAt ?? 0));
 
   return (
     <Shell>
-      {reviews.length > 0 && (
+      {pending.length > 0 && (
         <section className="mb-6">
           <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Pruebas de repaso</h2>
           <div className="flex flex-col gap-2">
-            {reviews.map((r) => (
+            {pending.map((r) => (
               <button
                 key={r.id}
                 onClick={() => onOpenReview(r.id)}
@@ -308,6 +393,28 @@ function Home({
                   </span>
                 </span>
                 <span className="text-sm font-bold text-white">Empezar</span>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+      {done.length > 0 && (
+        <section className="mb-6">
+          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Repasos hechos</h2>
+          <div className="overflow-hidden rounded-2xl border border-white/10">
+            {done.map((r, i) => (
+              <button
+                key={r.id}
+                onClick={() => onOpenReview(r.id)}
+                className={`flex min-h-14 w-full items-center gap-3 px-4 py-3 text-left active:bg-white/10 ${i ? "border-t border-white/10" : ""}`}
+              >
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-semibold">Repaso de {r.course}</span>
+                  <span className="block truncate text-xs text-slate-400">
+                    {r.exam || "Antes del examen"} · {r.quiz?.length ?? 0} preguntas
+                  </span>
+                </span>
+                <span className="shrink-0 text-sm font-bold text-[#6ea0ff]">Repetir</span>
               </button>
             ))}
           </div>

@@ -5,7 +5,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { FOCUS_EVENT, loadFocus, loadReviews } from "@/lib/focus-store";
+import { FOCUS_EVENT, isPendingReview, loadFocus, loadReviews } from "@/lib/focus-store";
 
 const TABS = [
   { href: "/", label: "Tocorito", icon: ChatIcon },
@@ -18,7 +18,7 @@ export default function TabBar() {
   // Punto rojo en Focus cuando hay una lección o una prueba de repaso pendiente.
   const [focusPending, setFocusPending] = useState(false);
   useEffect(() => {
-    const sync = () => setFocusPending(Boolean(loadFocus()) || loadReviews().length > 0);
+    const sync = () => setFocusPending(Boolean(loadFocus()) || loadReviews().some(isPendingReview));
     sync();
     window.addEventListener(FOCUS_EVENT, sync);
     return () => window.removeEventListener(FOCUS_EVENT, sync);

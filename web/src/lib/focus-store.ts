@@ -34,6 +34,8 @@ export type Review = {
   createdAt: number;
   quiz: QuizQuestion[] | null;
   passed: number[];
+  /** Cuándo la terminó. Hecha = se queda guardada y se puede repetir. */
+  doneAt?: number;
 };
 
 function read<T>(key: string, fallback: T): T {
@@ -126,9 +128,12 @@ export function updateReview(review: Review) {
   saveReviews(loadReviews().map((r) => (r.id === review.id ? review : r)));
 }
 
+/** Repaso terminado: se queda guardado (para repetirlo) y deja de contar como pendiente. */
 export function finishReview(id: string) {
-  saveReviews(loadReviews().filter((r) => r.id !== id));
+  saveReviews(loadReviews().map((r) => (r.id === id ? { ...r, passed: [], doneAt: Date.now() } : r)));
 }
+
+export const isPendingReview = (r: Review) => !r.doneAt;
 
 /**
  * Tocorito anotó un examen de una clase con lecciones: se crea la prueba de repaso (una por clase;
