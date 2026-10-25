@@ -102,15 +102,21 @@ export function useConversations() {
     setNextCursor(page.nextCursor);
   }, [nextCursor]);
 
+  /** Crea el chat en el servidor y lo deja activo (sin tocar los mensajes en pantalla). */
+  const create = useCallback(async () => {
+    const created = await createConversation();
+    setList((current) => [created, ...current]);
+    select(created.id);
+    return created.id;
+  }, [select]);
+
   /** "Nuevo chat": si el chat abierto ya está vacío, se reutiliza (no se llenan de chats vacíos). */
   const newChat = useCallback(async () => {
     if (activeRef.current && messages.length === 0) return activeRef.current;
-    const created = await createConversation();
-    setList((current) => [created, ...current]);
+    const id = await create();
     setMessages([]);
-    select(created.id);
-    return created.id;
-  }, [messages.length, select]);
+    return id;
+  }, [messages.length, create]);
 
   /** Abre un chat existente: descarga solo sus mensajes. Nunca crea uno nuevo. */
   const open = useCallback(
@@ -124,8 +130,11 @@ export function useConversations() {
     [select, titleIfNeeded, list]
   );
 
-  /** El chat activo, creándolo si todavía no existe (primer mensaje). */
-  const ensureActive = useCallback(async () => activeRef.current ?? (await newChat()), [newChat]);
+  /**
+   * El chat activo, creándolo si todavía no existe (primer mensaje). Aquí NO se vacían los mensajes:
+   * el del estudiante ya está en pantalla y se borraba (pasaba al escribir sin ningún chat abierto).
+   */
+  const ensureActive = useCallback(async () => activeRef.current ?? (await create()), [create]);
 
   /** Guarda el chat en el servidor y lo sube arriba del historial. */
   const persist = useCallback(
