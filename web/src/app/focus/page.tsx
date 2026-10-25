@@ -33,10 +33,11 @@ import { saveSolutionImage } from "@/lib/solution-image";
 type View =
   | { kind: "home" }
   | { kind: "lesson"; id: string }
-  | { kind: "practice"; id: string }
+  // `from`: a dónde vuelve (a la lista de Focus o a la lección abierta).
+  | { kind: "practice"; id: string; from: "home" | "lesson" }
   | { kind: "review"; id: string }
   | { kind: "focusDone"; saved: SavedLesson | null; topic: string }
-  | { kind: "practiceDone"; id: string; topic: string }
+  | { kind: "practiceDone"; id: string; topic: string; from: "home" | "lesson" }
   | { kind: "reviewDone"; course: string; retake: boolean };
 
 export default function FocusPage() {
@@ -110,8 +111,17 @@ export default function FocusPage() {
           <TocoritoFigure height={140} sipping />
           <h2 className="mt-4 text-2xl font-extrabold tracking-tight">Lección repetida</h2>
           <p className="mt-2 max-w-sm text-sm text-slate-400">{view.topic}, otra vez. Ni yo repaso tanto. 🐦</p>
-          <button onClick={() => setView({ kind: "lesson", id: view.id })} className="mt-6 min-h-12 w-full max-w-xs rounded-xl bg-[#1450d8] text-[15px] font-bold">
-            Volver a la lección
+          <button
+            onClick={() => setView({ kind: "practice", id: view.id, from: view.from })}
+            className="mt-6 min-h-12 w-full max-w-xs rounded-xl bg-[#1450d8] text-[15px] font-bold"
+          >
+            Repetir otra vez
+          </button>
+          <button
+            onClick={() => setView(view.from === "lesson" ? { kind: "lesson", id: view.id } : { kind: "home" })}
+            className="mt-2 min-h-12 w-full max-w-xs rounded-xl border border-white/15 text-[15px] font-bold"
+          >
+            {view.from === "lesson" ? "Volver a la lección" : "Volver a Focus"}
           </button>
         </Center>
       </Shell>
@@ -143,9 +153,10 @@ export default function FocusPage() {
     if (saved) {
       return (
         <PracticeLesson
+          key={`${saved.id}-${view.from}`}
           saved={saved}
-          onBack={() => setView({ kind: "lesson", id: saved.id })}
-          onDone={() => setView({ kind: "practiceDone", id: saved.id, topic: saved.topic })}
+          onBack={() => setView(view.from === "lesson" ? { kind: "lesson", id: saved.id } : { kind: "home" })}
+          onDone={() => setView({ kind: "practiceDone", id: saved.id, topic: saved.topic, from: view.from })}
         />
       );
     }
@@ -164,7 +175,7 @@ export default function FocusPage() {
           </div>
           <div className="mt-6 flex flex-col items-center gap-2 pb-2">
             <button
-              onClick={() => setView({ kind: "practice", id: saved.id })}
+              onClick={() => setView({ kind: "practice", id: saved.id, from: "lesson" })}
               className="min-h-12 w-full max-w-xs rounded-xl bg-[#1450d8] text-[15px] font-bold"
             >
               Repetir lección y prueba
@@ -186,7 +197,15 @@ export default function FocusPage() {
     }
   }
 
-  return <Home library={library} reviews={reviews} onOpenLesson={(id) => setView({ kind: "lesson", id })} onOpenReview={(id) => setView({ kind: "review", id })} />;
+  return (
+    <Home
+      library={library}
+      reviews={reviews}
+      onOpenLesson={(id) => setView({ kind: "lesson", id })}
+      onPractice={(id) => setView({ kind: "practice", id, from: "home" })}
+      onOpenReview={(id) => setView({ kind: "review", id })}
+    />
+  );
 }
 
 function MandatoryFocus({ focus, onDone }: { focus: FocusState; onDone: (saved: SavedLesson | null) => void }) {
@@ -344,11 +363,13 @@ function Home({
   library,
   reviews,
   onOpenLesson,
+  onPractice,
   onOpenReview,
 }: {
   library: SavedLesson[];
   reviews: Review[];
   onOpenLesson: (id: string) => void;
+  onPractice: (id: string) => void;
   onOpenReview: (id: string) => void;
 }) {
   if (!library.length && !reviews.length) {
@@ -428,17 +449,27 @@ function Home({
           </h2>
           <div className="overflow-hidden rounded-2xl border border-white/10">
             {lessons.map((l, i) => (
-              <button
-                key={l.id}
-                onClick={() => onOpenLesson(l.id)}
-                className={`flex min-h-14 w-full items-center gap-3 px-4 py-3 text-left active:bg-white/10 ${i ? "border-t border-white/10" : ""}`}
-              >
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate font-semibold">{l.topic}</span>
-                  <span className="block truncate text-xs text-slate-400">{l.task}</span>
-                </span>
-                <span className="shrink-0 text-xs text-slate-500">{dateFmt.format(l.completedAt)}</span>
-              </button>
+              // Tocar el nombre abre la lección; "Repetir" la empieza directamente (sin abrirla ni bajar).
+              <div key={l.id} className={`flex items-center ${i ? "border-t border-white/10" : ""}`}>
+                <button onClick={() => onOpenLesson(l.id)} className="flex min-h-14 min-w-0 flex-1 items-center gap-3 py-3 pl-4 pr-2 text-left active:bg-white/10">
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-semibold">{l.topic}</span>
+                    <span className="block truncate text-xs text-slate-400">{l.task}</span>
+                  </span>
+                  {/* En el móvil la fecha se esconde para que quepa el nombre junto a "Repetir". */}
+                  <span className="hidden shrink-0 text-xs text-slate-500 sm:inline">{dateFmt.format(l.completedAt)}</span>
+                </button>
+                <button
+                  onClick={() => onPractice(l.id)}
+                  aria-label={`Repetir lección y prueba: ${l.topic}`}
+                  className="mr-3 flex min-h-11 shrink-0 items-center gap-1.5 rounded-full bg-[#1450d8] px-3.5 text-sm font-bold text-white active:bg-[#1450d8]/80"
+                >
+                  <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2.4} aria-hidden>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 12a8 8 0 1 0 2.3-5.6M4 4v4h4" />
+                  </svg>
+                  Repetir
+                </button>
+              </div>
             ))}
           </div>
         </section>
