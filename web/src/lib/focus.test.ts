@@ -1,5 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { extractFocus, MIN_LESSON_SECONDS, parseLesson, stepSeconds, validateFocusRequest } from "./focus";
+import {
+  extractFocus,
+  extractReview,
+  lessonIndexText,
+  MIN_LESSON_SECONDS,
+  parseLesson,
+  parseReview,
+  sameCourse,
+  stepSeconds,
+  validateFocusRequest,
+  validateLessonIndex,
+  validateReviewRequest,
+} from "./focus";
 
 const LESSON = {
   titulo: "Ecuaciones",
@@ -15,10 +27,16 @@ const LESSON = {
 };
 
 describe("extractFocus", () => {
-  it("saca la marca y devuelve el tema", () => {
-    const { text, focus } = extractFocus('Ahí tienes: x = 5.\nAhora te toca Focus.\n[[FOCUS]]{"tema":"Ecuaciones","tarea":"Resolver 3x + 5 = 20"}[[/FOCUS]]');
+  it("saca la marca y devuelve clase, tema y tarea", () => {
+    const { text, focus } = extractFocus(
+      'Ahí tienes: x = 5.\nAhora te toca Focus.\n[[FOCUS]]{"clase":"Álgebra","tema":"Ecuaciones","tarea":"Resolver 3x + 5 = 20"}[[/FOCUS]]'
+    );
     expect(text).toBe("Ahí tienes: x = 5.\nAhora te toca Focus.");
-    expect(focus).toEqual({ topic: "Ecuaciones", task: "Resolver 3x + 5 = 20" });
+    expect(focus).toEqual({ course: "Álgebra", topic: "Ecuaciones", task: "Resolver 3x + 5 = 20" });
+  });
+
+  it("sin clase: queda en General", () => {
+    expect(extractFocus('[[FOCUS]]{"tema":"Ecuaciones","tarea":"x"}[[/FOCUS]]').focus?.course).toBe("General");
   });
 
   it("sin marca, o mal escrita, no hay Focus", () => {
@@ -50,6 +68,48 @@ describe("parseLesson", () => {
   it("los pasos suman al menos el tiempo mínimo", () => {
     const lesson = parseLesson(JSON.stringify(LESSON))!;
     expect(stepSeconds(lesson) * lesson.steps.length).toBeGreaterThanOrEqual(MIN_LESSON_SECONDS);
+  });
+});
+
+describe("repaso", () => {
+  it("extractReview saca la clase y limpia el texto", () => {
+    const r = extractReview('Anotado. Te dejé un repaso en Focus.\n[[REPASO]]{"clase":"Álgebra"}[[/REPASO]]');
+    expect(r).toEqual({ text: "Anotado. Te dejé un repaso en Focus.", review: "Álgebra" });
+    expect(extractReview("Hola").review).toBeNull();
+  });
+
+  it("misma clase sin importar tildes ni mayúsculas", () => {
+    expect(sameCourse("Física I", "fisica  i")).toBe(true);
+    expect(sameCourse("Física", "Química")).toBe(false);
+  });
+
+  it("índice de lecciones: valida y agrupa por clase", () => {
+    const index = validateLessonIndex([
+      { course: "Álgebra", topic: "Ecuaciones" },
+      { course: "Álgebra", topic: "Fracciones" },
+      { course: "Física", topic: "Caída libre" },
+      { course: "", topic: "sin clase" },
+      "basura",
+    ]);
+    expect(index).toHaveLength(3);
+    expect(lessonIndexText(index)).toBe("Lecciones guardadas en Focus:\n- Álgebra: Ecuaciones; Fracciones\n- Física: Caída libre");
+    expect(lessonIndexText([])).toContain("(ninguna)");
+  });
+
+  it("petición de repaso: exige clase y alguna lección con pasos", () => {
+    expect(validateReviewRequest({ course: "Álgebra", lessons: [] })).toBeNull();
+    const ok = validateReviewRequest({
+      course: "Álgebra",
+      exam: "Examen, 2026-10-30",
+      lessons: [{ topic: "Ecuaciones", task: "3x+5=20", steps: [{ heading: "Despejar", body: "Resta 5." }] }],
+    });
+    expect(ok?.lessons[0].steps).toHaveLength(1);
+  });
+
+  it("parseReview necesita al menos 3 preguntas válidas", () => {
+    const q = { pregunta: "¿?", opciones: ["a", "b", "c", "d"], correcta: 2, explicacion: "" };
+    expect(parseReview(JSON.stringify({ prueba: [q, q] }))).toBeNull();
+    expect(parseReview(JSON.stringify({ prueba: [q, q, q, q] }))).toHaveLength(4);
   });
 });
 

@@ -4,7 +4,8 @@
 //   {"type":"text","delta":"..."}                      ← texto en bruto, según llega
 //   {"type":"done","replies":[...],"actions":[...],"removals":["id"],"level":"medium","sip":true,"focus":null}  ← versión final limpia
 //                                                     (sip = Tocorito toma café: el navegador lo anima;
-//                                                      focus = {topic, task} si resolvió una tarea → mini lección)
+//                                                      focus = {course, topic, task} si resolvió una tarea → mini lección;
+//                                                      review = clase si anotó un examen de una clase con lecciones → repaso)
 //   {"type":"error","error":"..."}
 // El navegador solo manda el NIVEL (instant/medium/high); el servidor decide modelo y parámetros.
 // No registramos el contenido de los mensajes ni del calendario.
@@ -19,7 +20,7 @@ import { ChatInputError, splitReply, validateMessages } from "@/lib/chat";
 import { calendarData, extractActions, validateContext } from "@/lib/chat-actions";
 import { createSupabaseServer, supabaseConfigured } from "@/lib/supabase/server";
 import { extractCoffee } from "@/lib/coffee";
-import { extractFocus } from "@/lib/focus";
+import { extractFocus, extractReview, lessonIndexText, sameCourse, validateLessonIndex } from "@/lib/focus";
 
 export const runtime = "nodejs";
 
@@ -32,7 +33,12 @@ export async function POST(request: Request) {
     const { data } = await (await createSupabaseServer()).auth.getUser();
     if (!data.user) return NextResponse.json({ error: "Inicia sesión para hablar con Tocorito." }, { status: 401 });
   }
-  const body = (await request.json().catch(() => null)) as { messages?: unknown; context?: unknown; reasoningLevel?: unknown } | null;
+  const body = (await request.json().catch(() => null)) as {
+    messages?: unknown;
+    context?: unknown;
+    reasoningLevel?: unknown;
+    focusLessons?: unknown;
+  } | null;
 
   let messages;
   let provider;
@@ -45,6 +51,8 @@ export async function POST(request: Request) {
     throw err;
   }
   const context = validateContext(body?.context);
+  // Lecciones guardadas en Focus (clase y tema): Tocorito decide si toca prueba de repaso.
+  const lessonIndex = validateLessonIndex(body?.focusLessons);
   // Aquí se aplicará el plan del usuario cuando haya cuentas (allowedLevels por plan).
   const level = resolveLevel(body?.reasoningLevel);
 
@@ -60,7 +68,7 @@ export async function POST(request: Request) {
         send({ type: "status", status: "preparing" });
         for await (const ev of provider.stream({
           system: SYSTEM,
-          context: context ? calendarData(context) : "",
+          context: [context ? calendarData(context) : "", lessonIndexText(lessonIndex)].filter(Boolean).join("\n\n"),
           messages,
           level,
           signal: request.signal,
@@ -80,9 +88,12 @@ export async function POST(request: Request) {
         // Los sorbos de café no van en el texto: el navegador anima a Tocorito.
         // Si Tocorito resolvió una tarea, la marca [[FOCUS]] dice de qué va la mini lección.
         const { text: withoutFocus, focus } = extractFocus(withoutActions);
-        const { text, sip } = extractCoffee(withoutFocus);
+        // [[REPASO]]: anotó un examen de una clase con lecciones guardadas → prueba de repaso en Focus.
+        const { text: withoutReview, review: reviewCourse } = extractReview(withoutFocus);
+        const review = reviewCourse && lessonIndex.some((l) => sameCourse(l.course, reviewCourse)) ? reviewCourse : null;
+        const { text, sip } = extractCoffee(withoutReview);
         const replies = text ? splitReply(text) : ["Listo, anotado."];
-        send({ type: "done", replies, actions: context ? actions : [], removals: context ? removals : [], level, sip, focus });
+        send({ type: "done", replies, actions: context ? actions : [], removals: context ? removals : [], level, sip, focus, review });
         recordUsage({ provider: provider.id, level, ...usage, firstTokenMs, totalMs: Date.now() - started });
       } catch (err) {
         console.error(`chat (${provider.id}, ${level}): fallo:`, err instanceof Error ? err.message : "desconocido");

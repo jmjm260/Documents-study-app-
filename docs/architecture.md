@@ -60,4 +60,6 @@
 - `web/src/components/TabBar.tsx` — barra de pestañas inferior (Tocorito / Focus / Calendario), estilo app móvil.
 - `web/src/lib/focus.ts` + `focus-store.ts` + `web/src/app/focus/page.tsx` + `web/src/app/api/focus/lesson/route.ts` — Focus:
   tras resolver una tarea ([[FOCUS]]), mini lección con tiempo mínimo y prueba rápida; el chat queda bloqueado hasta acabar (ADR 0008, + pruebas).
+  Las lecciones se guardan por clase; al anotar un examen de una clase con lecciones ([[REPASO]]), `api/focus/review` hace una prueba de repaso.
+  Piezas de pantalla en `web/src/components/focus/FocusParts.tsx`; `web/src/lib/ai/ask-once.ts` para preguntas sueltas a la IA.
 - `web/src/lib/solution-image.ts` — imagen PNG limpia de la solución, dibujada en el dispositivo con canvas (gratis); se desbloquea al acabar el Focus (+ pruebas).

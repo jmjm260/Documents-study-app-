@@ -18,7 +18,7 @@ import { MAX_CHARS, MAX_IMAGES, type ChatMessage } from "@/lib/chat";
 import { actionNote, MAX_CONTEXT_ITEMS, removalNote, type ChatContext } from "@/lib/chat-actions";
 import { extractCoffee } from "@/lib/coffee";
 import type { FocusTopic } from "@/lib/focus";
-import { loadFocus, startFocus } from "@/lib/focus-store";
+import { lessonIndex, loadFocus, startFocus, startReview } from "@/lib/focus-store";
 import type { UiMessage } from "@/lib/conversations";
 import {
   addEntries,
@@ -163,6 +163,8 @@ export default function Chat() {
   // Focus: si hay una lección pendiente, el chat no se usa hasta terminarla.
   const router = useRouter();
   const [goingToFocus, setGoingToFocus] = useState(false);
+  // Prueba de repaso recién creada (anotó un examen de una clase con lecciones guardadas).
+  const [reviewReady, setReviewReady] = useState<string | null>(null);
   const focusAfterSpeech = useRef(false);
   useEffect(() => {
     if (loadFocus()) router.replace("/focus");
@@ -275,7 +277,7 @@ export default function Chat() {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: toHistory(next), context: calendarContext(), reasoningLevel: level }),
+        body: JSON.stringify({ messages: toHistory(next), context: calendarContext(), reasoningLevel: level, focusLessons: lessonIndex() }),
       });
       if (!res.ok || !res.body) {
         const data = await res.json().catch(() => ({}));
@@ -329,6 +331,13 @@ export default function Chat() {
           if (focus) {
             startFocus(focus, (ev.replies as string[]).join("\n\n"));
             focusAfterSpeech.current = true;
+          }
+          // Anotó un examen de una clase con lecciones guardadas: prueba de repaso en Focus.
+          const reviewCourse = ev.review as string | null;
+          if (reviewCourse) {
+            const exam = added.find((e) => e.kind === "examen") ?? added[0];
+            const review = startReview(reviewCourse, exam ? `${exam.title}, ${exam.date}` : "");
+            if (review) setReviewReady(review.course);
           }
           speech.update(ev.replies as string[], true);
         }
@@ -494,6 +503,19 @@ export default function Chat() {
           <div className="bubble-in mx-auto mb-2 flex max-w-3xl items-center gap-2 rounded-xl border border-[#e5262b]/60 bg-[#e5262b]/10 px-3 py-2 text-sm text-red-100" role="status">
             <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-[#e5262b]" />
             Ahora te toca Focus: mini lección y prueba sobre esta tarea. Te llevo…
+          </div>
+        )}
+        {reviewReady && !goingToFocus && (
+          <div className="bubble-in mx-auto mb-2 flex max-w-3xl items-center gap-2 rounded-xl border border-[#1450d8]/70 bg-[#1450d8]/15 py-1.5 pl-3 pr-1.5 text-sm text-blue-100" role="status">
+            <span className="min-w-0 flex-1">Prueba de repaso de {reviewReady} lista en Focus.</span>
+            <button onClick={() => router.push("/focus")} className="min-h-9 shrink-0 rounded-lg bg-[#1450d8] px-3 text-sm font-bold text-white">
+              Hacerla
+            </button>
+            <button onClick={() => setReviewReady(null)} aria-label="Cerrar aviso" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-blue-200 active:bg-white/10">
+              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2.5} aria-hidden>
+                <path strokeLinecap="round" d="M6 6l12 12M18 6L6 18" />
+              </svg>
+            </button>
           </div>
         )}
         {photos.length > 0 && (

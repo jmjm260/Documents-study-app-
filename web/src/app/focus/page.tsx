@@ -1,89 +1,74 @@
 "use client";
 
-// Focus: mini lección (2–4 min) + prueba rápida sobre la tarea que Tocorito resolvió.
-// No se puede saltar: cada paso tiene un tiempo mínimo y la prueba termina cuando aciertas todas
-// (las falladas vuelven al final). Mientras tanto, el chat está bloqueado.
+// Focus:
+// 1) Lección obligatoria: tras resolver una tarea, mini lección (2–4 min) + prueba rápida. No se puede
+//    saltar (tiempo mínimo por paso; la prueba acaba cuando aciertas todas). El chat queda bloqueado.
+// 2) Biblioteca: las lecciones terminadas se guardan por clase y se pueden releer.
+// 3) Pruebas de repaso: si anotas un examen de una clase con lecciones, Tocorito te deja una aquí.
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import TocoritoFigure from "@/components/chat/TocoritoFigure";
-import RichText from "@/components/RichText";
+import { Center, LessonStep, Quiz, Shell, StepCard } from "@/components/focus/FocusParts";
 import { stepSeconds } from "@/lib/focus";
-import { FOCUS_EVENT, loadFocus, prefetchLesson, saveFocus, type FocusState } from "@/lib/focus-store";
+import {
+  completeFocus,
+  deleteLesson,
+  finishReview,
+  FOCUS_EVENT,
+  loadFocus,
+  loadLibrary,
+  loadReviews,
+  prefetchLesson,
+  prefetchReview,
+  saveFocus,
+  updateReview,
+  type FocusState,
+  type Review,
+  type SavedLesson,
+} from "@/lib/focus-store";
 import { saveSolutionImage } from "@/lib/solution-image";
+
+type View =
+  | { kind: "home" }
+  | { kind: "lesson"; id: string }
+  | { kind: "review"; id: string }
+  | { kind: "focusDone"; saved: SavedLesson | null; topic: string }
+  | { kind: "reviewDone"; course: string };
 
 export default function FocusPage() {
   const router = useRouter();
-  // undefined = aún leyendo el almacenamiento; null = no hay nada pendiente.
+  // undefined = aún leyendo el almacenamiento.
   const [focus, setFocus] = useState<FocusState | null | undefined>(undefined);
-  // Al terminar se guarda aquí lo resuelto: la imagen de la solución se desbloquea después del Focus.
-  const [finished, setFinished] = useState<Pick<FocusState, "topic" | "task" | "solution"> | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
+  const [library, setLibrary] = useState<SavedLesson[]>([]);
+  const [reviews, setReviews] = useState<Review[]>([]);
+  const [view, setView] = useState<View>({ kind: "home" });
 
   useEffect(() => {
-    const sync = () => setFocus(loadFocus());
+    const sync = () => {
+      setFocus(loadFocus());
+      setLibrary(loadLibrary());
+      setReviews(loadReviews());
+    };
     sync();
     window.addEventListener(FOCUS_EVENT, sync);
     return () => window.removeEventListener(FOCUS_EVENT, sync);
   }, []);
 
-  // Pedir la lección si aún no está (normalmente el chat ya la pidió por adelantado).
-  const needsLesson = focus && !focus.lesson && !error;
-  useEffect(() => {
-    if (!needsLesson) return;
-    prefetchLesson(focus).catch((err) => setError(err instanceof Error ? err.message : "No pude preparar la lección."));
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- solo cuando cambia el Focus pendiente
-  }, [needsLesson, focus?.id]);
-
-  function update(patch: Partial<FocusState>) {
-    if (!focus) return;
-    const next = { ...focus, ...patch };
-    saveFocus(next);
-    setFocus(next);
-  }
-
-  function complete() {
-    if (focus) setFinished({ topic: focus.topic, task: focus.task, solution: focus.solution });
-    saveFocus(null);
-  }
-
-  async function saveImage() {
-    if (!finished) return;
-    setSaving(true);
-    setError(null);
-    try {
-      await saveSolutionImage({ topic: finished.topic, task: finished.task, text: finished.solution });
-    } catch {
-      setError("No pude crear la imagen.");
-    } finally {
-      setSaving(false);
-    }
-  }
-
   if (focus === undefined) return <Shell />;
 
-  if (finished !== null) {
+  if (view.kind === "focusDone") {
     return (
       <Shell>
         <Center>
           <TocoritoFigure height={140} sipping />
           <h2 className="mt-4 text-2xl font-extrabold tracking-tight">Focus completado</h2>
           <p className="mt-2 max-w-sm text-sm text-slate-400">
-            Mira tú… ahora sí sabes lo que entregas de {finished.topic}. Ya puedes volver al chat.
+            Mira tú… ahora sí sabes lo que entregas de {view.topic}. La lección queda guardada aquí en Focus.
           </p>
-          {finished.solution && (
-            <button
-              onClick={saveImage}
-              disabled={saving}
-              className="mt-6 min-h-12 w-full max-w-xs rounded-xl bg-[#e5262b] text-[15px] font-bold disabled:opacity-60"
-            >
-              {saving ? "Creando imagen…" : "Guardar imagen de la solución"}
-            </button>
-          )}
-          {error && <p className="mt-2 text-sm text-red-300">{error}</p>}
+          {view.saved?.solution && <SaveImageButton lesson={view.saved} primary />}
           <button
             onClick={() => router.push("/")}
-            className={`${finished.solution ? "mt-2 border border-white/15" : "mt-6 bg-[#1450d8]"} min-h-12 w-full max-w-xs rounded-xl text-[15px] font-bold`}
+            className={`${view.saved?.solution ? "mt-2 border border-white/15" : "mt-6 bg-[#1450d8]"} min-h-12 w-full max-w-xs rounded-xl text-[15px] font-bold`}
           >
             Volver al chat
           </button>
@@ -92,23 +77,90 @@ export default function FocusPage() {
     );
   }
 
-  if (!focus) {
+  // Hay una lección obligatoria pendiente: no se ve nada más hasta terminarla.
+  if (focus) return <MandatoryFocus focus={focus} onDone={(saved) => setView({ kind: "focusDone", saved, topic: focus.topic })} />;
+
+  if (view.kind === "reviewDone") {
     return (
       <Shell>
         <Center>
-          <TocoritoFigure height={130} />
-          <h2 className="mt-4 text-xl font-extrabold tracking-tight">Nada pendiente</h2>
+          <TocoritoFigure height={140} sipping />
+          <h2 className="mt-4 text-2xl font-extrabold tracking-tight">Repaso terminado</h2>
           <p className="mt-2 max-w-sm text-sm text-slate-400">
-            Cuando Tocorito te resuelva una tarea, aquí te toca una mini lección de 2–4 minutos y una prueba rápida sobre ella.
+            {view.course}: repasado. Si suspendes ahora, ya no es culpa mía. 🐦
           </p>
+          <button onClick={() => setView({ kind: "home" })} className="mt-6 min-h-12 w-full max-w-xs rounded-xl bg-[#1450d8] text-[15px] font-bold">
+            Volver a Focus
+          </button>
         </Center>
       </Shell>
     );
   }
 
+  if (view.kind === "review") {
+    const review = reviews.find((r) => r.id === view.id);
+    if (review) {
+      return (
+        <ReviewRunner
+          review={review}
+          onBack={() => setView({ kind: "home" })}
+          onDone={() => {
+            finishReview(review.id);
+            setView({ kind: "reviewDone", course: review.course });
+          }}
+        />
+      );
+    }
+  }
+
+  if (view.kind === "lesson") {
+    const saved = library.find((l) => l.id === view.id);
+    if (saved) {
+      return (
+        <Shell subtitle={`${saved.course} · ${saved.topic}`} onBack={() => setView({ kind: "home" })}>
+          <p className="text-sm text-slate-400">Tarea: {saved.task}</p>
+          <div className="mt-4 flex flex-col gap-3">
+            {saved.lesson.steps.map((s, i) => (
+              <StepCard key={i} step={s} />
+            ))}
+          </div>
+          <div className="mt-6 flex flex-col items-center gap-2 pb-2">
+            {saved.solution && <SaveImageButton lesson={saved} />}
+            <button
+              onClick={() => {
+                if (!window.confirm("¿Borrar esta lección de Focus?")) return;
+                deleteLesson(saved.id);
+                setView({ kind: "home" });
+              }}
+              className="min-h-11 text-sm text-slate-500 active:text-red-300"
+            >
+              Borrar lección
+            </button>
+          </div>
+        </Shell>
+      );
+    }
+  }
+
+  return <Home library={library} reviews={reviews} onOpenLesson={(id) => setView({ kind: "lesson", id })} onOpenReview={(id) => setView({ kind: "review", id })} />;
+}
+
+function MandatoryFocus({ focus, onDone }: { focus: FocusState; onDone: (saved: SavedLesson | null) => void }) {
+  const [error, setError] = useState<string | null>(null);
+
+  // Pedir la lección si aún no está (normalmente el chat ya la pidió por adelantado).
+  const needsLesson = !focus.lesson && !error;
+  useEffect(() => {
+    if (!needsLesson) return;
+    prefetchLesson(focus).catch((err) => setError(err instanceof Error ? err.message : "No pude preparar la lección."));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- solo cuando cambia el Focus pendiente
+  }, [needsLesson, focus.id]);
+
+  const update = (patch: Partial<FocusState>) => saveFocus({ ...focus, ...patch });
+
   if (!focus.lesson) {
     return (
-      <Shell topic={focus.topic}>
+      <Shell subtitle={`${focus.course} · ${focus.topic}`}>
         <Center>
           <TocoritoFigure height={130} sipping={!error} />
           {error ? (
@@ -130,11 +182,9 @@ export default function FocusPage() {
   }
 
   const lesson = focus.lesson;
-  const total = lesson.steps.length + 1;
   const done = focus.phase === "quiz" ? lesson.steps.length : focus.step;
-
   return (
-    <Shell topic={focus.topic} progress={done / total}>
+    <Shell subtitle={`${focus.course} · ${focus.topic}`} progress={done / (lesson.steps.length + 1)}>
       {focus.phase === "lesson" ? (
         <LessonStep
           key={focus.step}
@@ -147,11 +197,12 @@ export default function FocusPage() {
         />
       ) : (
         <Quiz
+          label="Prueba rápida"
           questions={lesson.quiz}
           passed={focus.passed}
           onPass={(i) => {
             const passed = [...focus.passed, i];
-            if (passed.length >= lesson.quiz.length) complete();
+            if (passed.length >= lesson.quiz.length) onDone(completeFocus(focus));
             else update({ passed });
           }}
         />
@@ -160,163 +211,159 @@ export default function FocusPage() {
   );
 }
 
-function Shell({ topic, progress, children }: { topic?: string; progress?: number; children?: React.ReactNode }) {
-  return (
-    <div className="flex h-full flex-col bg-black font-sans text-white">
-      <div className="flex h-1 shrink-0">
-        <div className="flex-1 bg-[#1450d8]" />
-        <div className="flex-1 bg-white" />
-        <div className="flex-1 bg-[#e5262b]" />
-      </div>
-      <header className="shrink-0 border-b border-white/10 px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] sm:px-6">
-        <div className="mx-auto max-w-2xl">
-          <h1 className="text-[17px] font-extrabold leading-tight tracking-tight">Focus</h1>
-          <p className="truncate text-xs text-slate-400">{topic ?? "Lecciones después de cada tarea"}</p>
-          {progress !== undefined && (
-            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10" role="progressbar" aria-valuenow={Math.round(progress * 100)} aria-valuemin={0} aria-valuemax={100}>
-              <div className="h-full rounded-full bg-[#e5262b] transition-[width] duration-500" style={{ width: `${Math.max(4, progress * 100)}%` }} />
-            </div>
-          )}
-        </div>
-      </header>
-      <main className="min-h-0 flex-1 overflow-y-auto [color-scheme:dark]">
-        <div className="mx-auto flex min-h-full max-w-2xl flex-col px-4 py-5 sm:px-6">{children}</div>
-      </main>
-    </div>
-  );
-}
-
-function Center({ children }: { children: React.ReactNode }) {
-  return <div className="m-auto flex w-full flex-col items-center py-6 text-center">{children}</div>;
-}
-
-function LessonStep({
-  index,
-  count,
-  title,
-  step,
-  seconds,
-  onNext,
-}: {
-  index: number;
-  count: number;
-  title: string;
-  step: { heading: string; body: string };
-  seconds: number;
-  onNext: () => void;
-}) {
-  // Cuenta atrás de lectura: el botón se activa al llegar a 0 (no se puede pasar sin leer).
-  const [left, setLeft] = useState(seconds);
+function ReviewRunner({ review, onBack, onDone }: { review: Review; onBack: () => void; onDone: () => void }) {
+  const [error, setError] = useState<string | null>(null);
+  const needsQuiz = !review.quiz && !error;
   useEffect(() => {
-    if (left <= 0) return;
-    const t = setTimeout(() => setLeft((s) => s - 1), 1000);
-    return () => clearTimeout(t);
-  }, [left]);
-  const last = index + 1 === count;
+    if (!needsQuiz) return;
+    prefetchReview(review).catch((err) => setError(err instanceof Error ? err.message : "No pude preparar el repaso."));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- solo cuando cambia el repaso
+  }, [needsQuiz, review.id]);
 
+  const subtitle = `Repaso de ${review.course}${review.exam ? ` · ${review.exam}` : ""}`;
+  if (!review.quiz) {
+    return (
+      <Shell subtitle={subtitle} onBack={onBack}>
+        <Center>
+          <TocoritoFigure height={130} sipping={!error} />
+          {error ? (
+            <>
+              <p className="mt-4 max-w-sm text-sm text-red-300">{error}</p>
+              <button onClick={() => setError(null)} className="mt-4 min-h-12 w-full max-w-xs rounded-xl bg-[#1450d8] text-[15px] font-bold">
+                Intentar otra vez
+              </button>
+            </>
+          ) : (
+            <h2 className="mt-4 text-xl font-extrabold tracking-tight">Preparando tu repaso…</h2>
+          )}
+        </Center>
+      </Shell>
+    );
+  }
+  const quiz = review.quiz;
   return (
-    <div className="flex flex-1 flex-col">
-      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-        {title} · Paso {index + 1} de {count}
-      </p>
-      <div className="bubble-in mt-3 rounded-[20px] border-[1.5px] border-white/90 px-4 py-4">
-        <h2 className="text-lg font-extrabold leading-snug">{step.heading}</h2>
-        <div className="mt-2 whitespace-pre-wrap break-words text-[15px] leading-relaxed text-slate-100">
-          <RichText text={step.body} />
-        </div>
-      </div>
-      <div className="mt-auto flex items-end gap-3 pt-6">
-        <TocoritoFigure height={64} className="shrink-0" />
-        <button
-          onClick={onNext}
-          disabled={left > 0}
-          className="min-h-12 flex-1 rounded-xl bg-[#1450d8] text-[15px] font-bold transition disabled:bg-white/10 disabled:text-slate-400"
-        >
-          {left > 0 ? `Lee con calma… ${left} s` : last ? "Ir a la prueba" : "Siguiente"}
-        </button>
-      </div>
-    </div>
+    <Shell subtitle={subtitle} progress={review.passed.length / quiz.length} onBack={onBack}>
+      <Quiz
+        label="Repaso"
+        questions={quiz}
+        passed={review.passed}
+        onPass={(i) => {
+          const passed = [...review.passed, i];
+          if (passed.length >= quiz.length) onDone();
+          else updateReview({ ...review, passed });
+        }}
+      />
+    </Shell>
   );
 }
 
-function Quiz({
-  questions,
-  passed,
-  onPass,
+function Home({
+  library,
+  reviews,
+  onOpenLesson,
+  onOpenReview,
 }: {
-  questions: { question: string; options: string[]; answer: number; explanation: string }[];
-  passed: number[];
-  onPass: (index: number) => void;
+  library: SavedLesson[];
+  reviews: Review[];
+  onOpenLesson: (id: string) => void;
+  onOpenReview: (id: string) => void;
 }) {
-  // Orden de las que faltan: las falladas se van al final y vuelven a salir.
-  const [order, setOrder] = useState(() => questions.map((_, i) => i).filter((i) => !passed.includes(i)));
-  const [picked, setPicked] = useState<number | null>(null);
-  const current = order[0];
-  const q = questions[current];
-  if (!q) return null;
-  const right = picked === q.answer;
-
-  function next() {
-    if (right) {
-      setOrder((o) => o.slice(1));
-      onPass(current);
-    } else {
-      setOrder((o) => [...o.slice(1), o[0]]);
-    }
-    setPicked(null);
+  if (!library.length && !reviews.length) {
+    return (
+      <Shell>
+        <Center>
+          <TocoritoFigure height={130} />
+          <h2 className="mt-4 text-xl font-extrabold tracking-tight">Nada todavía</h2>
+          <p className="mt-2 max-w-sm text-sm text-slate-400">
+            Cuando Tocorito te resuelva una tarea, aquí te toca una mini lección y una prueba rápida. Se quedan guardadas por
+            clase, y antes de un examen te hace un repaso con ellas.
+          </p>
+        </Center>
+      </Shell>
+    );
   }
 
+  // Lecciones agrupadas por clase, la más reciente primero.
+  const byCourse = new Map<string, SavedLesson[]>();
+  for (const l of [...library].sort((a, b) => b.completedAt - a.completedAt)) byCourse.set(l.course, [...(byCourse.get(l.course) ?? []), l]);
+  const dateFmt = new Intl.DateTimeFormat("es", { day: "numeric", month: "short" });
+
   return (
-    <div className="flex flex-1 flex-col">
-      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-        Prueba rápida · {passed.length} de {questions.length} acertadas
-      </p>
-      <h2 key={`${current}-${order.length}`} className="bubble-in mt-3 text-lg font-extrabold leading-snug">
-        <RichText text={q.question} />
-      </h2>
-      <div className="mt-4 flex flex-col gap-2">
-        {q.options.map((opt, i) => {
-          const state =
-            picked === null ? "idle" : i === q.answer ? "right" : i === picked ? "wrong" : "dim";
-          return (
-            <button
-              key={i}
-              disabled={picked !== null}
-              onClick={() => setPicked(i)}
-              className={`min-h-12 rounded-xl border px-4 py-3 text-left text-[15px] transition ${
-                state === "right"
-                  ? "border-emerald-400 bg-emerald-500/15 text-emerald-100"
-                  : state === "wrong"
-                    ? "border-red-400 bg-red-500/15 text-red-100"
-                    : state === "dim"
-                      ? "border-white/10 text-slate-500"
-                      : "border-white/20 active:bg-white/10"
-              }`}
-            >
-              <RichText text={opt} />
-            </button>
-          );
-        })}
-      </div>
-      {picked !== null && (
-        <div className="bubble-in mt-4 rounded-xl border border-white/15 bg-white/[0.04] px-4 py-3 text-sm leading-relaxed text-slate-200">
-          <p className="font-bold">{right ? "Bien. Ni yo me lo esperaba. 🐦" : "No. Esta vuelve a salir al final. 🙄"}</p>
-          {q.explanation && (
-            <p className="mt-1">
-              <RichText text={q.explanation} />
-            </p>
-          )}
-        </div>
+    <Shell>
+      {reviews.length > 0 && (
+        <section className="mb-6">
+          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Pruebas de repaso</h2>
+          <div className="flex flex-col gap-2">
+            {reviews.map((r) => (
+              <button
+                key={r.id}
+                onClick={() => onOpenReview(r.id)}
+                className="flex min-h-14 items-center gap-3 rounded-2xl border border-[#e5262b]/60 bg-[#e5262b]/10 px-4 py-3 text-left active:bg-[#e5262b]/20"
+              >
+                <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-[#e5262b]" />
+                <span className="min-w-0 flex-1">
+                  <span className="block font-bold">Repaso de {r.course}</span>
+                  <span className="block truncate text-xs text-red-100/80">
+                    {r.exam || "Antes del examen"} · {r.quiz ? `${r.quiz.length} preguntas` : "preparando…"}
+                  </span>
+                </span>
+                <span className="text-sm font-bold text-white">Empezar</span>
+              </button>
+            ))}
+          </div>
+        </section>
       )}
-      <div className="mt-auto pt-6">
-        <button
-          onClick={next}
-          disabled={picked === null}
-          className="min-h-12 w-full rounded-xl bg-[#1450d8] text-[15px] font-bold transition disabled:bg-white/10 disabled:text-slate-400"
-        >
-          {picked === null ? "Elige una respuesta" : right && order.length === 1 ? "Terminar" : "Siguiente"}
-        </button>
-      </div>
-    </div>
+      {[...byCourse].map(([course, lessons]) => (
+        <section key={course} className="mb-6">
+          <h2 className="mb-2 flex items-baseline justify-between text-xs font-semibold uppercase tracking-wide text-slate-500">
+            <span>{course}</span>
+            <span className="normal-case">{lessons.length} {lessons.length === 1 ? "lección" : "lecciones"}</span>
+          </h2>
+          <div className="overflow-hidden rounded-2xl border border-white/10">
+            {lessons.map((l, i) => (
+              <button
+                key={l.id}
+                onClick={() => onOpenLesson(l.id)}
+                className={`flex min-h-14 w-full items-center gap-3 px-4 py-3 text-left active:bg-white/10 ${i ? "border-t border-white/10" : ""}`}
+              >
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-semibold">{l.topic}</span>
+                  <span className="block truncate text-xs text-slate-400">{l.task}</span>
+                </span>
+                <span className="shrink-0 text-xs text-slate-500">{dateFmt.format(l.completedAt)}</span>
+              </button>
+            ))}
+          </div>
+        </section>
+      ))}
+    </Shell>
+  );
+}
+
+function SaveImageButton({ lesson, primary = false }: { lesson: Pick<SavedLesson, "topic" | "task" | "solution">; primary?: boolean }) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  async function save() {
+    setSaving(true);
+    setError(null);
+    try {
+      await saveSolutionImage({ topic: lesson.topic, task: lesson.task, text: lesson.solution });
+    } catch {
+      setError("No pude crear la imagen.");
+    } finally {
+      setSaving(false);
+    }
+  }
+  return (
+    <>
+      <button
+        onClick={save}
+        disabled={saving}
+        className={`${primary ? "mt-6 bg-[#e5262b]" : "border border-white/15"} min-h-12 w-full max-w-xs rounded-xl text-[15px] font-bold disabled:opacity-60`}
+      >
+        {saving ? "Creando imagen…" : "Guardar imagen de la solución"}
+      </button>
+      {error && <p className="mt-1 text-sm text-red-300">{error}</p>}
+    </>
   );
 }

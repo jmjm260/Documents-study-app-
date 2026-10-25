@@ -24,6 +24,19 @@ aprenda lo que se le resolvió: una mini lección de 2–4 minutos y una prueba 
 
 - En la web, borrar los datos del navegador quita el bloqueo. Con cuentas, el Focus pendiente irá al servidor.
 
+## Biblioteca por clase y pruebas de repaso (añadido)
+
+- Cada lección terminada se guarda en Focus (`tocorito.focus.library.v1`), agrupada por **clase**.
+  La clase la deduce Tocorito (campo `"clase"` del bloque [[FOCUS]]) y reutiliza el nombre exacto si ya
+  hay lecciones o un curso del calendario de esa asignatura.
+- Con cada mensaje el chat manda el índice de lecciones (solo clase y tema, no el contenido).
+- Si el estudiante pide anotar un examen y hay lecciones de **esa misma clase**, Tocorito añade
+  `[[REPASO]]{"clase":"…"}[[/REPASO]]`. El servidor solo lo acepta si esa clase está en el índice
+  (comparando sin tildes ni mayúsculas). Si no, no hay repaso.
+- La app crea una prueba de repaso pendiente (una por clase) y la prepara ya: `POST /api/focus/review`
+  recibe las lecciones de esa clase (máx. 12) y devuelve 5–8 preguntas hechas solo con ellas.
+- El repaso no bloquea el chat: aviso en el chat + punto rojo en la pestaña Focus.
+
 ## Imagen de la solución (añadido)
 
 - Se desbloquea al terminar el Focus: botón "Guardar imagen de la solución".
