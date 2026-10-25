@@ -20,8 +20,12 @@ El dueño definió tres partes para Focus:
     apropiado para 13+, Tocorito responde un rechazo corto y no se crea nada.
   - `POST /api/focus/course/lesson` genera cada lección (pasos + mini test) **la primera vez que se abre**
     y se guarda: no se paga dos veces y no se generan lecciones que nadie abre.
+  - Sin esperas para el estudiante: al crear el curso, la **primera lección ya viene lista**; y mientras
+    lee una lección, Tocorito prepara **en segundo plano** la siguiente (y la prueba de la unidad si es la
+    última). Cada diapositiva de explicación pide **20 s mínimo** la primera vez (leer y entender, y le da
+    tiempo a Tocorito); las preguntas no esperan, y al repetir una lección hecha tampoco.
   - Desbloqueo en orden como Duolingo; el trofeo de cada unidad (prueba de la unidad) usa la misma IA de
-    los repasos con las lecciones de esa unidad. Sin cuenta atrás: el estudiante eligió aprenderlo.
+    los repasos con las lecciones de esa unidad.
   - Camino en zigzag con banners por unidad y Tocorito junto a la lección que toca.
   - Guardado en el dispositivo (`tocorito.focus.courses.v1`); con cuentas irá a la base de datos.
 

@@ -1,6 +1,6 @@
 // Cursos de Focus en ESTE dispositivo (localStorage). Con cuentas, irán a la base de datos.
 // Cada lección se genera la primera vez que se abre y queda guardada (no se vuelve a pagar).
-import { outlineToCourse, type Course, type CourseLevel, type CourseOutline, type LessonRef } from "./courses";
+import { nextLesson, outlineToCourse, type Course, type CourseLevel, type CourseOutline, type LessonRef } from "./courses";
 import type { Lesson, QuizQuestion } from "./focus";
 import { once, postJson, read, write } from "./focus-store";
 
@@ -20,14 +20,32 @@ export function deleteCourse(id: string) {
   write(KEY, loadCourses().filter((c) => c.id !== id));
 }
 
-/** Tocorito arma el índice del curso. Devuelve el curso guardado, o el rechazo si el tema no es apropiado. */
+/**
+ * Tocorito arma el índice del curso y deja YA lista la primera lección (así el estudiante no espera al entrar).
+ * Devuelve el curso guardado, o el rechazo si el tema no es apropiado.
+ */
 export async function createCourse(topic: string, level: CourseLevel): Promise<{ course: Course } | { refusal: string }> {
   const data = await postJson<{ outline?: CourseOutline; refusal?: string }>("/api/focus/course", { topic, level }, "No pude crear el curso.");
   if (data.refusal) return { refusal: data.refusal };
   if (!data.outline) throw new Error("No pude crear el curso.");
   const course = outlineToCourse(data.outline, topic, level, crypto.randomUUID(), Date.now());
   saveCourse(course);
-  return { course };
+  // Si la primera lección falla, el curso queda creado igual: se volverá a pedir al abrirla.
+  await ensureCourseLesson(course, { unit: 0, lesson: 0 }).catch(() => {});
+  return { course: latest(course.id) ?? course };
+}
+
+/**
+ * En segundo plano: mientras el estudiante lee una lección, Tocorito prepara lo que viene después
+ * (la siguiente lección y, si es la última de la unidad, la prueba de la unidad). Los errores se
+ * ignoran: si algo falla, se vuelve a pedir al abrirlo.
+ */
+export function prefetchAhead(courseId: string, ref: LessonRef) {
+  const course = latest(courseId);
+  if (!course) return;
+  const next = nextLesson(course, ref);
+  if (next) ensureCourseLesson(course, next).catch(() => {});
+  if (ref.lesson === course.units[ref.unit].lessons.length - 1) ensureUnitTest(course, ref.unit).catch(() => {});
 }
 
 const latest = (id: string) => loadCourses().find((c) => c.id === id);

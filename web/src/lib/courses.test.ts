@@ -4,6 +4,7 @@ import {
   currentLesson,
   isUnitTestUnlocked,
   isUnlocked,
+  nextLesson,
   outlineToCourse,
   parseOutline,
   validateCourseLessonRequest,
@@ -59,6 +60,13 @@ describe("progreso", () => {
     expect(isUnlocked(c, { unit: 1, lesson: 0 })).toBe(true);
     expect(isUnlocked(c, { unit: 1, lesson: 1 })).toBe(false);
     expect(courseProgress(c)).toEqual({ done: 2, total: 4 });
+  });
+
+  it("siguiente lección: dentro de la unidad, a la unidad siguiente y nada tras la última", () => {
+    const c = course();
+    expect(nextLesson(c, { unit: 0, lesson: 0 })).toEqual({ unit: 0, lesson: 1 });
+    expect(nextLesson(c, { unit: 0, lesson: 1 })).toEqual({ unit: 1, lesson: 0 });
+    expect(nextLesson(c, { unit: 1, lesson: 1 })).toBeNull();
   });
 
   it("curso terminado: no hay lección actual", () => {

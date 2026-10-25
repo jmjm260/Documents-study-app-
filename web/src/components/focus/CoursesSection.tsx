@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import TocoritoFigure from "@/components/chat/TocoritoFigure";
 import Sheet from "@/components/Sheet";
 import {
+  COURSE_STEP_SECONDS,
   courseProgress,
   currentLesson,
   isUnitTestUnlocked,
@@ -16,7 +17,16 @@ import {
   type CourseLevel,
   type LessonRef,
 } from "@/lib/courses";
-import { completeCourseLesson, completeUnitTest, createCourse, deleteCourse, ensureCourseLesson, ensureUnitTest, loadCourses } from "@/lib/courses-store";
+import {
+  completeCourseLesson,
+  completeUnitTest,
+  createCourse,
+  deleteCourse,
+  ensureCourseLesson,
+  ensureUnitTest,
+  loadCourses,
+  prefetchAhead,
+} from "@/lib/courses-store";
 import type { Lesson, QuizQuestion } from "@/lib/focus";
 import { COURSE_COLORS } from "@/lib/focus-map";
 import { FOCUS_EVENT } from "@/lib/focus-store";
@@ -235,7 +245,7 @@ function NewCourseSheet({ onClose, onCreated }: { onClose: () => void; onCreated
       </div>
       {message && <p className="mt-3 rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-slate-200">{message}</p>}
       <button onClick={create} disabled={busy} className="mb-2 mt-5 min-h-12 w-full rounded-xl bg-[#1450d8] text-[15px] font-bold text-white disabled:opacity-60">
-        {busy ? "Tocorito está armando tu curso…" : "Crear curso"}
+        {busy ? "Tocorito arma tu curso y tu primera lección…" : "Crear curso"}
       </button>
     </Sheet>
   );
@@ -260,6 +270,11 @@ function CoursePath({
   const current = currentLesson(course);
   const p = courseProgress(course);
   let step = 0;
+  // Si la lección que toca aún no existe (p. ej. falló antes), se prepara ya, mientras mira el camino.
+  useEffect(() => {
+    if (current && !course.units[current.unit].lessons[current.lesson].lesson) ensureCourseLesson(course, current).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- al abrir el curso o cambiar la lección actual
+  }, [course.id, current?.unit, current?.lesson]);
   // Tocorito toma café de vez en cuando junto a la lección que toca.
   const [sipping, setSipping] = useState(false);
   useEffect(() => {
@@ -365,6 +380,13 @@ function LessonRunner({ course, lessonRef, onBack, onDone }: { course: Course; l
     // eslint-disable-next-line react-hooks/exhaustive-deps -- solo al abrir la lección o al reintentar
   }, [lesson, error]);
 
+  // En cuanto esta lección está en pantalla, Tocorito prepara en segundo plano la siguiente (y la prueba de la unidad).
+  const ready = Boolean(lesson);
+  useEffect(() => {
+    if (ready) prefetchAhead(course.id, lessonRef);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- una vez por lección
+  }, [ready]);
+
   const subtitle = `${course.title} · ${item.title}`;
   if (!lesson) {
     return (
@@ -383,7 +405,9 @@ function LessonRunner({ course, lessonRef, onBack, onDone }: { course: Course; l
           count={lesson.steps.length}
           title={lesson.title}
           step={lesson.steps[step]}
-          seconds={0}
+          // La primera vez, 20 s por explicación para leerla con calma (y Tocorito prepara lo siguiente).
+          // Al repetir una lección ya hecha, sin espera. Las preguntas nunca esperan.
+          seconds={item.doneAt ? 0 : COURSE_STEP_SECONDS}
           onNext={() => (step + 1 < lesson.steps.length ? setStep(step + 1) : setPhase("quiz"))}
         />
       ) : (

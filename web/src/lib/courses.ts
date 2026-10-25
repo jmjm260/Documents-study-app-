@@ -112,6 +112,17 @@ function flat(course: Course): (LessonRef & { done: boolean })[] {
   return course.units.flatMap((u, ui) => u.lessons.map((l, li) => ({ unit: ui, lesson: li, done: Boolean(l.doneAt) })));
 }
 
+/** La lección que va después de `ref` en el curso (pasando a la unidad siguiente), o null si es la última. */
+export function nextLesson(course: Course, ref: LessonRef): LessonRef | null {
+  const all = flat(course);
+  const index = all.findIndex((l) => l.unit === ref.unit && l.lesson === ref.lesson);
+  const next = index >= 0 ? all[index + 1] : undefined;
+  return next ? { unit: next.unit, lesson: next.lesson } : null;
+}
+
+/** Segundos mínimos por diapositiva de explicación la primera vez (para leer y entender; las preguntas no esperan). */
+export const COURSE_STEP_SECONDS = 20;
+
 /** La lección que toca (la primera sin hacer), o null si ya terminó todas. */
 export function currentLesson(course: Course): LessonRef | null {
   const next = flat(course).find((l) => !l.done);
