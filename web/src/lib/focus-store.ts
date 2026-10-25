@@ -9,6 +9,27 @@ const KEY = "tocorito.focus.v1";
 const LIBRARY_KEY = "tocorito.focus.library.v1";
 const REVIEWS_KEY = "tocorito.focus.reviews.v1";
 export const FOCUS_EVENT = "tocorito-focus";
+/** Texto que el chat pone en la barra al abrirse (pedirle una tarea a Tocorito desde el mapa de Focus). */
+const CHAT_PREFILL_KEY = "tocorito.chatPrefill";
+
+export function setChatPrefill(text: string) {
+  try {
+    sessionStorage.setItem(CHAT_PREFILL_KEY, text.slice(0, 500));
+  } catch {
+    // Sin almacenamiento: el chat se abre vacío.
+  }
+}
+
+/** Lo lee el chat una sola vez al abrirse. */
+export function takeChatPrefill(): string | null {
+  try {
+    const text = sessionStorage.getItem(CHAT_PREFILL_KEY);
+    sessionStorage.removeItem(CHAT_PREFILL_KEY);
+    return text;
+  } catch {
+    return null;
+  }
+}
 
 export type FocusState = FocusTopic & {
   id: string;

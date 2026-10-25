@@ -62,4 +62,6 @@
   tras resolver una tarea ([[FOCUS]]), mini lección con tiempo mínimo y prueba rápida; el chat queda bloqueado hasta acabar (ADR 0008, + pruebas).
   Las lecciones se guardan por clase; al anotar un examen de una clase con lecciones ([[REPASO]]), `api/focus/review` hace una prueba de repaso.
   Piezas de pantalla en `web/src/components/focus/FocusParts.tsx`; `web/src/lib/ai/ask-once.ts` para preguntas sueltas a la IA.
+- `web/src/lib/focus-map.ts` + `web/src/components/focus/CourseMap.tsx` — mapa de cursos estilo Duolingo en Focus:
+  Tocorito arriba, una columna por curso con tareas, lecciones y exámenes por fecha (ADR 0009, + pruebas).
 - `web/src/lib/solution-image.ts` — imagen PNG limpia de la solución, dibujada en el dispositivo con canvas (gratis); se desbloquea al acabar el Focus (+ pruebas).

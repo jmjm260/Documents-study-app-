@@ -3,14 +3,19 @@
 // Focus:
 // 1) Lección obligatoria: tras resolver una tarea, mini lección (2–4 min) + prueba rápida. No se puede
 //    saltar (tiempo mínimo por paso; la prueba acaba cuando aciertas todas). El chat queda bloqueado.
-// 2) Biblioteca: las lecciones terminadas se guardan por clase y se pueden releer.
-// 3) Pruebas de repaso: si anotas un examen de una clase con lecciones, Tocorito te deja una aquí.
+// 2) Mapa de cursos (estilo Duolingo): Tocorito arriba, una columna por curso con sus tareas, lecciones
+//    y exámenes por fecha. Tocar un círculo abre sus acciones (repetir, ver, imagen, pedírsela a Tocorito…).
+// 3) Pruebas de repaso: si anotas un examen de una clase con lecciones, Tocorito te deja una aquí (trofeo).
 // Lo ya hecho (lecciones y repasos) se puede repetir igual, pero sin esperas: ya lo leíste una vez.
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import TocoritoFigure from "@/components/chat/TocoritoFigure";
+import CourseMap from "@/components/focus/CourseMap";
 import { Center, LessonStep, Quiz, Shell, StepCard } from "@/components/focus/FocusParts";
-import { stepSeconds } from "@/lib/focus";
+import Sheet from "@/components/Sheet";
+import { dayKey } from "@/lib/calendar";
+import { sameCourse, stepSeconds } from "@/lib/focus";
+import { buildCourseMap, type MapColumn, type MapItem, type MapNode } from "@/lib/focus-map";
 import {
   completeFocus,
   deleteLesson,
@@ -23,11 +28,14 @@ import {
   prefetchLesson,
   prefetchReview,
   saveFocus,
+  setChatPrefill,
+  startReview,
   updateReview,
   type FocusState,
   type Review,
   type SavedLesson,
 } from "@/lib/focus-store";
+import { loadCanvasCache, loadEntries, loadHiddenCanvas, toCalendarItems } from "@/lib/entries";
 import { saveSolutionImage } from "@/lib/solution-image";
 
 type View =
@@ -47,6 +55,8 @@ export default function FocusPage() {
   const [library, setLibrary] = useState<SavedLesson[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [view, setView] = useState<View>({ kind: "home" });
+  // Con una lección obligatoria pendiente se puede mirar el mapa, pero solo para volver a ella.
+  const [mapWhilePending, setMapWhilePending] = useState(false);
 
   useEffect(() => {
     const sync = () => {
@@ -82,8 +92,22 @@ export default function FocusPage() {
     );
   }
 
-  // Hay una lección obligatoria pendiente: no se ve nada más hasta terminarla.
-  if (focus) return <MandatoryFocus focus={focus} onDone={(saved) => setView({ kind: "focusDone", saved, topic: focus.topic })} />;
+  // Hay una lección obligatoria pendiente: hasta terminarla, solo ella (o el mapa, que lleva de vuelta a ella).
+  if (focus) {
+    if (mapWhilePending) {
+      return <MapHome library={library} reviews={reviews} pending={focus} onOpenPending={() => setMapWhilePending(false)} setView={setView} />;
+    }
+    return (
+      <MandatoryFocus
+        focus={focus}
+        onBack={() => setMapWhilePending(true)}
+        onDone={(saved) => {
+          setMapWhilePending(false);
+          setView({ kind: "focusDone", saved, topic: focus.topic });
+        }}
+      />
+    );
+  }
 
   if (view.kind === "reviewDone") {
     return (
@@ -191,18 +215,10 @@ export default function FocusPage() {
     }
   }
 
-  return (
-    <Home
-      library={library}
-      reviews={reviews}
-      onOpenLesson={(id) => setView({ kind: "lesson", id })}
-      onPractice={(id) => setView({ kind: "practice", id, from: "home" })}
-      onOpenReview={(id) => setView({ kind: "review", id })}
-    />
-  );
+  return <MapHome library={library} reviews={reviews} pending={null} onOpenPending={() => {}} setView={setView} />;
 }
 
-function MandatoryFocus({ focus, onDone }: { focus: FocusState; onDone: (saved: SavedLesson | null) => void }) {
+function MandatoryFocus({ focus, onBack, onDone }: { focus: FocusState; onBack: () => void; onDone: (saved: SavedLesson | null) => void }) {
   const [error, setError] = useState<string | null>(null);
 
   // Pedir la lección si aún no está (normalmente el chat ya la pidió por adelantado).
@@ -217,7 +233,7 @@ function MandatoryFocus({ focus, onDone }: { focus: FocusState; onDone: (saved: 
 
   if (!focus.lesson) {
     return (
-      <Shell subtitle={`${focus.course} · ${focus.topic}`}>
+      <Shell subtitle={`${focus.course} · ${focus.topic}`} onBack={onBack}>
         <Center>
           <TocoritoFigure height={130} sipping={!error} />
           {error ? (
@@ -241,7 +257,7 @@ function MandatoryFocus({ focus, onDone }: { focus: FocusState; onDone: (saved: 
   const lesson = focus.lesson;
   const done = focus.phase === "quiz" ? lesson.steps.length : focus.step;
   return (
-    <Shell subtitle={`${focus.course} · ${focus.topic}`} progress={done / (lesson.steps.length + 1)}>
+    <Shell subtitle={`${focus.course} · ${focus.topic}`} progress={done / (lesson.steps.length + 1)} onBack={onBack}>
       {focus.phase === "lesson" ? (
         <LessonStep
           key={focus.step}
@@ -353,132 +369,199 @@ function PracticeLesson({ saved, onBack, onDone }: { saved: SavedLesson; onBack:
   );
 }
 
-function Home({
+/** Lo del calendario (Canvas + anotaciones) que puede salir en el mapa. */
+function loadMapItems(): MapItem[] {
+  return toCalendarItems(loadCanvasCache(), loadEntries(), loadHiddenCanvas()).map((i) => ({
+    id: i.id,
+    kind: i.kind,
+    title: i.title,
+    day: i.day,
+    course: i.course,
+    source: i.source,
+  }));
+}
+
+type SetView = (view: View) => void;
+
+function MapHome({
   library,
   reviews,
-  onOpenLesson,
-  onPractice,
-  onOpenReview,
+  pending,
+  onOpenPending,
+  setView,
 }: {
   library: SavedLesson[];
   reviews: Review[];
-  onOpenLesson: (id: string) => void;
-  onPractice: (id: string) => void;
-  onOpenReview: (id: string) => void;
+  pending: FocusState | null;
+  onOpenPending: () => void;
+  setView: SetView;
 }) {
-  if (!library.length && !reviews.length) {
+  const [items, setItems] = useState<MapItem[]>([]);
+  useEffect(() => setItems(loadMapItems()), []);
+  const [selected, setSelected] = useState<{ column: MapColumn; node: MapNode } | null>(null);
+
+  const columns = useMemo(
+    () =>
+      buildCourseMap({
+        lessons: library,
+        reviews,
+        pending: pending && { course: pending.course, topic: pending.topic, createdAt: pending.createdAt },
+        items,
+        today: dayKey(new Date()),
+      }),
+    [library, reviews, pending, items]
+  );
+
+  if (!columns.length) {
     return (
       <Shell>
         <Center>
           <TocoritoFigure height={130} />
-          <h2 className="mt-4 text-xl font-extrabold tracking-tight">Nada todavía</h2>
+          <h2 className="mt-4 text-xl font-extrabold tracking-tight">Tu mapa está vacío</h2>
           <p className="mt-2 max-w-sm text-sm text-slate-400">
-            Cuando Tocorito te resuelva una tarea, aquí te toca una mini lección y una prueba rápida. Se quedan guardadas por
-            clase, y antes de un examen te hace un repaso con ellas.
+            Conecta tu calendario de Canvas o pídele una tarea a Tocorito: aquí saldrán tus cursos, sus tareas y tus lecciones.
           </p>
         </Center>
       </Shell>
     );
   }
 
-  // Lecciones agrupadas por clase, la más reciente primero.
-  const byCourse = new Map<string, SavedLesson[]>();
-  for (const l of [...library].sort((a, b) => b.completedAt - a.completedAt)) byCourse.set(l.course, [...(byCourse.get(l.course) ?? []), l]);
-  const dateFmt = new Intl.DateTimeFormat("es", { day: "numeric", month: "short" });
-  const pending = reviews.filter(isPendingReview);
-  const done = reviews.filter((r) => !isPendingReview(r)).sort((a, b) => (b.doneAt ?? 0) - (a.doneAt ?? 0));
-
   return (
-    <Shell>
-      {pending.length > 0 && (
-        <section className="mb-6">
-          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Pruebas de repaso</h2>
-          <div className="flex flex-col gap-2">
-            {pending.map((r) => (
-              <button
-                key={r.id}
-                onClick={() => onOpenReview(r.id)}
-                className="flex min-h-14 items-center gap-3 rounded-2xl border border-[#e5262b]/60 bg-[#e5262b]/10 px-4 py-3 text-left active:bg-[#e5262b]/20"
-              >
-                <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-[#e5262b]" />
-                <span className="min-w-0 flex-1">
-                  <span className="block font-bold">Repaso de {r.course}</span>
-                  <span className="block truncate text-xs text-red-100/80">
-                    {r.exam || "Antes del examen"} · {r.quiz ? `${r.quiz.length} preguntas` : "preparando…"}
-                  </span>
-                </span>
-                <span className="text-sm font-bold text-white">Empezar</span>
-              </button>
-            ))}
-          </div>
-        </section>
+    <Shell subtitle={pending ? "Primero, tu lección pendiente" : "Tus cursos"}>
+      <CourseMap
+        columns={columns}
+        onNode={(column, node) => (pending && node.type === "pending" ? onOpenPending() : setSelected({ column, node }))}
+      />
+      {selected && (
+        <NodeSheet
+          {...selected}
+          library={library}
+          locked={Boolean(pending)}
+          onOpenPending={onOpenPending}
+          setView={setView}
+          onClose={() => setSelected(null)}
+        />
       )}
-      {done.length > 0 && (
-        <section className="mb-6">
-          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Repasos hechos</h2>
-          <div className="overflow-hidden rounded-2xl border border-white/10">
-            {done.map((r, i) => (
-              <button
-                key={r.id}
-                onClick={() => onOpenReview(r.id)}
-                className={`flex min-h-14 w-full items-center gap-3 px-4 py-3 text-left active:bg-white/10 ${i ? "border-t border-white/10" : ""}`}
-              >
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate font-semibold">Repaso de {r.course}</span>
-                  <span className="block truncate text-xs text-slate-400">
-                    {r.exam || "Antes del examen"} · {r.quiz?.length ?? 0} preguntas
-                  </span>
-                </span>
-                <span className="shrink-0 text-sm font-bold text-[#6ea0ff]">Repetir</span>
-              </button>
-            ))}
-          </div>
-        </section>
-      )}
-      {[...byCourse].map(([course, lessons]) => (
-        <section key={course} className="mb-6">
-          <h2 className="mb-2 flex items-baseline justify-between text-xs font-semibold uppercase tracking-wide text-slate-500">
-            <span>{course}</span>
-            <span className="normal-case">{lessons.length} {lessons.length === 1 ? "lección" : "lecciones"}</span>
-          </h2>
-          <div className="overflow-hidden rounded-2xl border border-white/10">
-            {lessons.map((l, i) => (
-              // Tocar el nombre abre la lección; "Repetir" la empieza directamente (sin abrirla ni bajar).
-              <div key={l.id} className={`flex items-center ${i ? "border-t border-white/10" : ""}`}>
-                <button onClick={() => onOpenLesson(l.id)} className="flex min-h-14 min-w-0 flex-1 items-center gap-3 py-3 pl-4 pr-2 text-left active:bg-white/10">
-                  <span className="min-w-0 flex-1">
-                    <span className="line-clamp-2 font-semibold leading-snug">{l.topic}</span>
-                    <span className="block truncate text-xs text-slate-400">{l.task}</span>
-                  </span>
-                  {/* En el móvil la fecha se esconde para que quepa el nombre junto a "Repetir". */}
-                  <span className="hidden shrink-0 text-xs text-slate-500 sm:inline">{dateFmt.format(l.completedAt)}</span>
-                </button>
-                <button
-                  onClick={() => onPractice(l.id)}
-                  aria-label={`Repetir lección y prueba: ${l.topic}`}
-                  className={`${l.solution ? "mr-2" : "mr-3"} flex min-h-11 shrink-0 items-center gap-1.5 rounded-full bg-[#1450d8] px-3.5 text-sm font-bold text-white active:bg-[#1450d8]/80`}
-                >
-                  <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2.4} aria-hidden>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 12a8 8 0 1 0 2.3-5.6M4 4v4h4" />
-                  </svg>
-                  Repetir
-                </button>
-                {l.solution && (
-                  <span className="mr-3 shrink-0">
-                    <SaveImageButton lesson={l} variant="icon" />
-                  </span>
-                )}
-              </div>
-            ))}
-          </div>
-        </section>
-      ))}
     </Shell>
   );
 }
 
-/** "primary": botón grande (al terminar el Focus). "icon": botón redondo para la lista de lecciones. */
-function SaveImageButton({ lesson, variant }: { lesson: Pick<SavedLesson, "topic" | "task" | "solution">; variant: "primary" | "icon" }) {
+/** Lo que se puede hacer con cada círculo del mapa. */
+function NodeSheet({
+  column,
+  node,
+  library,
+  locked,
+  onOpenPending,
+  setView,
+  onClose,
+}: {
+  column: MapColumn;
+  node: MapNode;
+  library: SavedLesson[];
+  locked: boolean;
+  onOpenPending: () => void;
+  setView: SetView;
+  onClose: () => void;
+}) {
+  const router = useRouter();
+  const date = new Intl.DateTimeFormat("es", { weekday: "long", day: "numeric", month: "long" }).format(new Date(`${node.date}T12:00:00`));
+  const primary = "min-h-12 w-full rounded-xl bg-[#1450d8] text-[15px] font-bold text-white";
+  const secondary = "min-h-12 w-full rounded-xl border border-white/15 text-[15px] font-bold text-white";
+  const go = (view: View) => {
+    onClose();
+    setView(view);
+  };
+
+  let body: React.ReactNode;
+  if (locked) {
+    // Con una lección obligatoria pendiente, el mapa solo lleva de vuelta a ella.
+    body = (
+      <>
+        <p className="text-sm text-slate-400">Primero termina tu lección pendiente. Luego todo esto vuelve a estar disponible.</p>
+        <button onClick={() => (onClose(), onOpenPending())} className={`${primary} mt-4`}>
+          Ir a mi lección
+        </button>
+      </>
+    );
+  } else if (node.type === "lesson") {
+    const saved = library.find((l) => l.id === node.id);
+    body = (
+      <div className="flex flex-col gap-2">
+        <p className="mb-2 text-sm text-slate-400">Lección y mini test hechos. Puedes repetirlos las veces que quieras.</p>
+        <button onClick={() => go({ kind: "practice", id: node.id, from: "home" })} className={primary}>
+          Repetir lección y prueba
+        </button>
+        <button onClick={() => go({ kind: "lesson", id: node.id })} className={secondary}>
+          Ver lección
+        </button>
+        {saved?.solution && <SaveImageButton lesson={saved} variant="sheet" />}
+      </div>
+    );
+  } else if (node.type === "task") {
+    body = (
+      <>
+        <p className="text-sm text-slate-400">
+          Tocorito aún no la ha resuelto. Pídesela en el chat (con el enunciado o una foto) y luego te toca su mini lección.
+        </p>
+        <button
+          onClick={() => {
+            setChatPrefill(`Ayúdame con esta tarea de ${column.name}: "${node.title}" (para el ${node.date}). `);
+            onClose();
+            router.push("/");
+          }}
+          className={`${primary} mt-4`}
+        >
+          Pedírsela a Tocorito
+        </button>
+      </>
+    );
+  } else if (node.type === "exam") {
+    const lessons = library.filter((l) => sameCourse(l.course, column.name)).length;
+    body = node.reviewId ? (
+      <>
+        <p className="text-sm text-slate-400">
+          {node.reviewDone ? "Ya hiciste este repaso. Puedes repetirlo cuando quieras." : "Tu prueba de repaso, hecha con tus lecciones de este curso."}
+        </p>
+        <button onClick={() => go({ kind: "review", id: node.reviewId! })} className={`${primary} mt-4`}>
+          {node.reviewDone ? "Repetir repaso" : "Hacer repaso"}
+        </button>
+      </>
+    ) : lessons ? (
+      <>
+        <p className="text-sm text-slate-400">
+          Tienes {lessons === 1 ? "1 lección" : `${lessons} lecciones`} de este curso. Tocorito te prepara una prueba de repaso con{" "}
+          {lessons === 1 ? "ella" : "ellas"}.
+        </p>
+        <button
+          onClick={() => {
+            const review = startReview(column.name, `${node.title}, ${node.date}`);
+            if (review) go({ kind: "review", id: review.id });
+          }}
+          className={`${primary} mt-4`}
+        >
+          Preparar repaso
+        </button>
+      </>
+    ) : (
+      <p className="pb-2 text-sm text-slate-400">
+        Aún no tienes lecciones de este curso. Cuando Tocorito te resuelva tareas de {column.name}, aquí tendrás tu repaso.
+      </p>
+    );
+  }
+
+  return (
+    <Sheet title={node.title} onClose={onClose} dark>
+      <p className="mb-3 text-xs font-semibold uppercase tracking-wide" style={{ color: column.color }}>
+        {column.name} · {date}
+      </p>
+      {body}
+    </Sheet>
+  );
+}
+
+/** "primary": botón rojo grande (al terminar el Focus). "sheet": botón secundario en la hoja de un círculo del mapa. */
+function SaveImageButton({ lesson, variant }: { lesson: Pick<SavedLesson, "topic" | "task" | "solution">; variant: "primary" | "sheet" }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   async function save() {
@@ -492,25 +575,14 @@ function SaveImageButton({ lesson, variant }: { lesson: Pick<SavedLesson, "topic
       setSaving(false);
     }
   }
-  if (variant === "icon") {
-    const label = error ?? (saving ? "Creando imagen…" : `Guardar imagen de la solución: ${lesson.topic}`);
+  if (variant === "sheet") {
     return (
-      <button
-        onClick={save}
-        disabled={saving}
-        aria-label={label}
-        title={label}
-        className={`flex h-11 w-11 items-center justify-center rounded-full border transition disabled:opacity-60 ${
-          error ? "border-red-400 text-red-300" : "border-white/20 text-slate-200 active:bg-white/10"
-        }`}
-      >
-        {/* Icono de imagen con flecha de descarga */}
-        <svg viewBox="0 0 24 24" className={`h-5 w-5 ${saving ? "animate-pulse" : ""}`} fill="none" stroke="currentColor" strokeWidth={2} aria-hidden>
-          <rect x="3.5" y="4" width="17" height="13" rx="2" />
-          <path strokeLinecap="round" strokeLinejoin="round" d="M3.5 14l4.5-4 4 3.5 3-2.5 5 4" />
-          <path strokeLinecap="round" strokeLinejoin="round" d="M12 17.5v4M9.8 19.5L12 21.6l2.2-2.1" />
-        </svg>
-      </button>
+      <>
+        <button onClick={save} disabled={saving} className="min-h-12 w-full rounded-xl border border-white/15 text-[15px] font-bold text-white disabled:opacity-60">
+          {saving ? "Creando imagen…" : "Guardar imagen de la solución"}
+        </button>
+        {error && <p className="text-sm text-red-300">{error}</p>}
+      </>
     );
   }
   return (

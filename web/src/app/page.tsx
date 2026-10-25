@@ -18,7 +18,7 @@ import { MAX_CHARS, MAX_IMAGES, type ChatMessage } from "@/lib/chat";
 import { actionNote, MAX_CONTEXT_ITEMS, removalNote, type ChatContext } from "@/lib/chat-actions";
 import { extractCoffee } from "@/lib/coffee";
 import type { FocusTopic } from "@/lib/focus";
-import { lessonIndex, loadFocus, startFocus, startReview } from "@/lib/focus-store";
+import { lessonIndex, loadFocus, startFocus, startReview, takeChatPrefill } from "@/lib/focus-store";
 import type { UiMessage } from "@/lib/conversations";
 import {
   addEntries,
@@ -159,6 +159,13 @@ export default function Chat() {
     REASONING_LEVELS.map((l) => ({ level: l, realReasoning: true }))
   );
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  // Desde el mapa de Focus ("Pedírsela a Tocorito"): la petición llega escrita en la barra, lista para enviar.
+  useEffect(() => {
+    const prefill = takeChatPrefill();
+    if (!prefill) return;
+    setInput(prefill);
+    setTimeout(() => inputRef.current?.focus(), 100);
+  }, []);
 
   // Focus: si hay una lección pendiente, el chat no se usa hasta terminarla.
   const router = useRouter();
