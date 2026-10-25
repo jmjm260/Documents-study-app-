@@ -20,7 +20,8 @@ export type MapNode =
   | { type: "lesson"; id: string; title: string; date: string }
   | { type: "exam"; id: string; title: string; date: string; reviewId: string | null; reviewDone: boolean };
 
-export type MapColumn = { key: string; name: string; color: string; nodes: MapNode[]; done: number; total: number };
+/** `school`: es una clase de la escuela (sale en el calendario o Canvas). Si no, va a la parte "Libre". */
+export type MapColumn = { key: string; name: string; color: string; nodes: MapNode[]; done: number; total: number; school: boolean };
 
 /**
  * Colores de las columnas. Se reparten por orden alfabético de los cursos: así dos cursos nunca
@@ -63,6 +64,9 @@ export function buildCourseMap(input: {
     return columns.get(key)!;
   };
 
+  // Clases de la escuela: todo curso que aparece en el calendario (aunque sus tareas sean viejas o lejanas).
+  const schoolKeys = new Set(input.items.filter((i) => i.course?.trim()).map((i) => courseKey(i.course!)));
+
   // Primero el calendario: así el nombre del curso es el de Canvas (o el que puso el estudiante).
   for (const item of input.items) {
     if (!item.course?.trim() || item.day < from || item.day > until) continue;
@@ -100,7 +104,7 @@ export function buildCourseMap(input: {
       const done = nodes.filter((n) => n.type === "lesson").length;
       const total = nodes.filter((n) => n.type !== "exam").length;
       const color = COURSE_COLORS[alphabetical.indexOf(key) % COURSE_COLORS.length];
-      return { key, name, color, nodes, done, total };
+      return { key, name, color, nodes, done, total, school: schoolKeys.has(key) };
     })
     // Primero donde hay algo que hacer (lección pendiente o repaso sin hacer); luego por nombre. "General" al final.
     .sort((a, b) => urgency(b) - urgency(a) || Number(a.key === "general") - Number(b.key === "general") || a.name.localeCompare(b.name, "es"));

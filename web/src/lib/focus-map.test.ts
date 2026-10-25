@@ -71,6 +71,22 @@ describe("buildCourseMap", () => {
     expect(cols).toEqual([]);
   });
 
+  it("separa Escuela (clases del calendario) de Libre (lo demás)", () => {
+    const cols = buildCourseMap({
+      today,
+      lessons: [
+        { id: "l1", course: "Cálculo I", topic: "Por partes", completedAt: day("2026-10-23") },
+        { id: "l2", course: "General", topic: "Cómo funciona un motor", completedAt: day("2026-10-24") },
+      ],
+      reviews: [],
+      pending: null,
+      // La tarea es vieja (no sale como círculo), pero basta para saber que Cálculo I es de la escuela.
+      items: [item({ title: "Tarea 1", day: "2026-08-01" })],
+    });
+    expect(cols.filter((c) => c.school).map((c) => c.name)).toEqual(["Cálculo I"]);
+    expect(cols.filter((c) => !c.school).map((c) => c.name)).toEqual(["General"]);
+  });
+
   it("cada curso tiene un color distinto", () => {
     const names = ["Cálculo", "Física", "Historia", "Inglés", "Química"];
     const cols = buildCourseMap({ today, lessons: [], reviews: [], pending: null, items: names.map((n) => item({ title: "T", day: "2026-10-27", course: n })) });

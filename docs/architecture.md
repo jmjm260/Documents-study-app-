@@ -64,4 +64,7 @@
   Piezas de pantalla en `web/src/components/focus/FocusParts.tsx`; `web/src/lib/ai/ask-once.ts` para preguntas sueltas a la IA.
 - `web/src/lib/focus-map.ts` + `web/src/components/focus/CourseMap.tsx` — mapa de cursos estilo Duolingo en Focus:
   Tocorito arriba, una columna por curso con tareas, lecciones y exámenes por fecha (ADR 0009, + pruebas).
+- Focus en tres pestañas (ADR 0010): Escuela (clases del calendario), Cursos y Libre (lo demás).
+  `web/src/lib/courses.ts` + `courses-store.ts` + `web/src/components/focus/CoursesSection.tsx` + `web/src/app/api/focus/course/` —
+  cursos que genera Tocorito: índice al crear, cada lección al abrirla, desbloqueo en orden y prueba por unidad (+ pruebas).
 - `web/src/lib/solution-image.ts` — imagen PNG limpia de la solución, dibujada en el dispositivo con canvas (gratis); se desbloquea al acabar el Focus (+ pruebas).

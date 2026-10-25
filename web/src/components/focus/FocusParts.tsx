@@ -51,6 +51,32 @@ export function Shell({
   );
 }
 
+export const FOCUS_TABS = [
+  { id: "escuela", label: "Escuela" },
+  { id: "cursos", label: "Cursos" },
+  { id: "libre", label: "Libre" },
+] as const;
+export type FocusTab = (typeof FOCUS_TABS)[number]["id"];
+
+/** Las tres partes de Focus: Escuela (clases reales), Cursos (los genera Tocorito) y Libre (lo demás). */
+export function FocusTabs({ value, onChange }: { value: FocusTab; onChange: (tab: FocusTab) => void }) {
+  return (
+    <div role="tablist" aria-label="Partes de Focus" className="mb-3 flex rounded-xl bg-[#161618] p-1">
+      {FOCUS_TABS.map((t) => (
+        <button
+          key={t.id}
+          role="tab"
+          aria-selected={value === t.id}
+          onClick={() => onChange(t.id)}
+          className={`min-h-10 flex-1 rounded-lg text-sm font-semibold transition ${value === t.id ? "bg-[#1450d8] text-white" : "text-slate-400 active:bg-white/10"}`}
+        >
+          {t.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function Center({ children }: { children: React.ReactNode }) {
   return <div className="m-auto flex w-full flex-col items-center py-6 text-center">{children}</div>;
 }

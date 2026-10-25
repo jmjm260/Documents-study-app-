@@ -59,7 +59,7 @@ export type Review = {
   doneAt?: number;
 };
 
-function read<T>(key: string, fallback: T): T {
+export function read<T>(key: string, fallback: T): T {
   try {
     return (JSON.parse(localStorage.getItem(key) ?? "null") as T) ?? fallback;
   } catch {
@@ -67,7 +67,7 @@ function read<T>(key: string, fallback: T): T {
   }
 }
 
-function write(key: string, value: unknown) {
+export function write(key: string, value: unknown) {
   try {
     if (value === null) localStorage.removeItem(key);
     else localStorage.setItem(key, JSON.stringify(value));
@@ -172,7 +172,7 @@ export function startReview(course: string, exam: string): Review | null {
 // Una sola petición por lección o repaso, aunque la pidan el chat (por adelantado) y Focus a la vez.
 const inflight = new Map<string, Promise<unknown>>();
 
-function once<T>(id: string, make: () => Promise<T>): Promise<T> {
+export function once<T>(id: string, make: () => Promise<T>): Promise<T> {
   let p = inflight.get(id) as Promise<T> | undefined;
   if (!p) {
     p = make().finally(() => inflight.delete(id));
@@ -181,7 +181,7 @@ function once<T>(id: string, make: () => Promise<T>): Promise<T> {
   return p;
 }
 
-async function postJson<T>(url: string, body: unknown, fallback: string): Promise<T> {
+export async function postJson<T>(url: string, body: unknown, fallback: string): Promise<T> {
   const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error ?? fallback);

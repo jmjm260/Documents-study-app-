@@ -1,0 +1,90 @@
+// Cursos de Focus en ESTE dispositivo (localStorage). Con cuentas, irán a la base de datos.
+// Cada lección se genera la primera vez que se abre y queda guardada (no se vuelve a pagar).
+import { outlineToCourse, type Course, type CourseLevel, type CourseOutline, type LessonRef } from "./courses";
+import type { Lesson, QuizQuestion } from "./focus";
+import { once, postJson, read, write } from "./focus-store";
+
+const KEY = "tocorito.focus.courses.v1";
+
+export function loadCourses(): Course[] {
+  const list = read<Course[]>(KEY, []);
+  return Array.isArray(list) ? list.filter((c) => typeof c?.id === "string" && Array.isArray(c.units)) : [];
+}
+
+function saveCourse(course: Course) {
+  const list = loadCourses();
+  write(KEY, list.some((c) => c.id === course.id) ? list.map((c) => (c.id === course.id ? course : c)) : [...list, course]);
+}
+
+export function deleteCourse(id: string) {
+  write(KEY, loadCourses().filter((c) => c.id !== id));
+}
+
+/** Tocorito arma el índice del curso. Devuelve el curso guardado, o el rechazo si el tema no es apropiado. */
+export async function createCourse(topic: string, level: CourseLevel): Promise<{ course: Course } | { refusal: string }> {
+  const data = await postJson<{ outline?: CourseOutline; refusal?: string }>("/api/focus/course", { topic, level }, "No pude crear el curso.");
+  if (data.refusal) return { refusal: data.refusal };
+  if (!data.outline) throw new Error("No pude crear el curso.");
+  const course = outlineToCourse(data.outline, topic, level, crypto.randomUUID(), Date.now());
+  saveCourse(course);
+  return { course };
+}
+
+const latest = (id: string) => loadCourses().find((c) => c.id === id);
+
+/** La lección (si ya existe) o la pide a la IA y la guarda. */
+export function ensureCourseLesson(course: Course, ref: LessonRef): Promise<Lesson> {
+  const item = course.units[ref.unit]?.lessons[ref.lesson];
+  if (!item) return Promise.reject(new Error("Esa lección no existe."));
+  if (item.lesson) return Promise.resolve(item.lesson);
+  const previous = course.units.flatMap((u, ui) => u.lessons.filter((_, li) => ui < ref.unit || (ui === ref.unit && li < ref.lesson)).map((l) => l.title));
+  return once(`${course.id}:${ref.unit}:${ref.lesson}`, async () => {
+    const { lesson } = await postJson<{ lesson: Lesson }>(
+      "/api/focus/course/lesson",
+      { course: course.title, level: course.level, unit: course.units[ref.unit].title, title: item.title, goal: item.goal, previous },
+      "No pude preparar la lección."
+    );
+    const current = latest(course.id);
+    if (current) {
+      current.units[ref.unit].lessons[ref.lesson].lesson = lesson;
+      saveCourse(current);
+    }
+    return lesson;
+  });
+}
+
+export function completeCourseLesson(courseId: string, ref: LessonRef) {
+  const current = latest(courseId);
+  const item = current?.units[ref.unit]?.lessons[ref.lesson];
+  if (!current || !item) return;
+  item.doneAt ??= Date.now();
+  saveCourse(current);
+}
+
+/** Prueba de la unidad: se hace con sus lecciones (la misma IA de los repasos) y se guarda. */
+export function ensureUnitTest(course: Course, unit: number): Promise<QuizQuestion[]> {
+  const u = course.units[unit];
+  if (!u) return Promise.reject(new Error("Esa unidad no existe."));
+  if (u.test.quiz) return Promise.resolve(u.test.quiz);
+  return once(`${course.id}:test:${unit}`, async () => {
+    const lessons = u.lessons.filter((l) => l.lesson).map((l) => ({ topic: l.title, task: l.goal, steps: l.lesson!.steps }));
+    const { quiz } = await postJson<{ quiz: QuizQuestion[] }>(
+      "/api/focus/review",
+      { course: course.title, exam: `Prueba de la unidad: ${u.title}`, lessons },
+      "No pude preparar la prueba."
+    );
+    const current = latest(course.id);
+    if (current) {
+      current.units[unit].test.quiz = quiz;
+      saveCourse(current);
+    }
+    return quiz;
+  });
+}
+
+export function completeUnitTest(courseId: string, unit: number) {
+  const current = latest(courseId);
+  if (!current?.units[unit]) return;
+  current.units[unit].test.doneAt ??= Date.now();
+  saveCourse(current);
+}

@@ -11,7 +11,8 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import TocoritoFigure from "@/components/chat/TocoritoFigure";
 import CourseMap from "@/components/focus/CourseMap";
-import { Center, LessonStep, Quiz, Shell, StepCard } from "@/components/focus/FocusParts";
+import CoursesSection from "@/components/focus/CoursesSection";
+import { Center, FOCUS_TABS, FocusTabs, LessonStep, Quiz, Shell, StepCard, type FocusTab } from "@/components/focus/FocusParts";
 import Sheet from "@/components/Sheet";
 import { dayKey } from "@/lib/calendar";
 import { sameCourse, stepSeconds } from "@/lib/focus";
@@ -38,6 +39,8 @@ import {
 import { loadCanvasCache, loadEntries, loadHiddenCanvas, toCalendarItems } from "@/lib/entries";
 import { saveSolutionImage } from "@/lib/solution-image";
 
+const TAB_KEY = "tocorito.focus.tab";
+
 type View =
   | { kind: "home" }
   | { kind: "lesson"; id: string }
@@ -57,6 +60,24 @@ export default function FocusPage() {
   const [view, setView] = useState<View>({ kind: "home" });
   // Con una lección obligatoria pendiente se puede mirar el mapa, pero solo para volver a ella.
   const [mapWhilePending, setMapWhilePending] = useState(false);
+  // Parte de Focus abierta (se recuerda en este dispositivo).
+  const [tab, setTab] = useState<FocusTab>("escuela");
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(TAB_KEY);
+      if (FOCUS_TABS.some((t) => t.id === saved)) setTab(saved as FocusTab);
+    } catch {
+      // Sin almacenamiento: empieza en Escuela.
+    }
+  }, []);
+  function chooseTab(next: FocusTab) {
+    setTab(next);
+    try {
+      localStorage.setItem(TAB_KEY, next);
+    } catch {
+      // Sin almacenamiento: dura mientras la pantalla esté abierta.
+    }
+  }
 
   useEffect(() => {
     const sync = () => {
@@ -95,7 +116,7 @@ export default function FocusPage() {
   // Hay una lección obligatoria pendiente: hasta terminarla, solo ella (o el mapa, que lleva de vuelta a ella).
   if (focus) {
     if (mapWhilePending) {
-      return <MapHome library={library} reviews={reviews} pending={focus} onOpenPending={() => setMapWhilePending(false)} setView={setView} />;
+      return <MapHome section="todo" library={library} reviews={reviews} pending={focus} onOpenPending={() => setMapWhilePending(false)} setView={setView} />;
     }
     return (
       <MandatoryFocus
@@ -215,7 +236,9 @@ export default function FocusPage() {
     }
   }
 
-  return <MapHome library={library} reviews={reviews} pending={null} onOpenPending={() => {}} setView={setView} />;
+  const tabs = <FocusTabs value={tab} onChange={chooseTab} />;
+  if (tab === "cursos") return <CoursesSection tabs={tabs} />;
+  return <MapHome section={tab} tabs={tabs} library={library} reviews={reviews} pending={null} onOpenPending={() => {}} setView={setView} />;
 }
 
 function MandatoryFocus({ focus, onBack, onDone }: { focus: FocusState; onBack: () => void; onDone: (saved: SavedLesson | null) => void }) {
@@ -383,19 +406,28 @@ function loadMapItems(): MapItem[] {
 
 type SetView = (view: View) => void;
 
+/**
+ * Mapa de columnas. "escuela": clases que salen en el calendario/Canvas. "libre": lo demás.
+ * "todo": con una lección obligatoria pendiente (sin pestañas: solo sirve para volver a ella).
+ */
 function MapHome({
+  section,
+  tabs,
   library,
   reviews,
   pending,
   onOpenPending,
   setView,
 }: {
+  section: "escuela" | "libre" | "todo";
+  tabs?: React.ReactNode;
   library: SavedLesson[];
   reviews: Review[];
   pending: FocusState | null;
   onOpenPending: () => void;
   setView: SetView;
 }) {
+  const router = useRouter();
   const [items, setItems] = useState<MapItem[]>([]);
   useEffect(() => setItems(loadMapItems()), []);
   const [selected, setSelected] = useState<{ column: MapColumn; node: MapNode } | null>(null);
@@ -408,26 +440,44 @@ function MapHome({
         pending: pending && { course: pending.course, topic: pending.topic, createdAt: pending.createdAt },
         items,
         today: dayKey(new Date()),
-      }),
-    [library, reviews, pending, items]
+      }).filter((c) => section === "todo" || c.school === (section === "escuela")),
+    [library, reviews, pending, items, section]
   );
+
+  const subtitle = pending ? "Primero, tu lección pendiente" : section === "escuela" ? "Tus clases de la escuela" : "Lo que aprendes por tu cuenta";
 
   if (!columns.length) {
     return (
-      <Shell>
+      <Shell subtitle={subtitle}>
+        {tabs}
         <Center>
-          <TocoritoFigure height={130} />
-          <h2 className="mt-4 text-xl font-extrabold tracking-tight">Tu mapa está vacío</h2>
-          <p className="mt-2 max-w-sm text-sm text-slate-400">
-            Conecta tu calendario de Canvas o pídele una tarea a Tocorito: aquí saldrán tus cursos, sus tareas y tus lecciones.
-          </p>
+          <TocoritoFigure height={120} />
+          {section === "escuela" ? (
+            <>
+              <h2 className="mt-4 text-xl font-extrabold tracking-tight">Tus clases saldrán aquí</h2>
+              <p className="mt-2 max-w-sm text-sm text-slate-400">
+                Conecta tu calendario de Canvas (o anota tareas y exámenes con su materia) y aquí verás cada clase con sus tareas y tus lecciones.
+              </p>
+              <button onClick={() => router.push("/calendario")} className="mt-6 min-h-12 w-full max-w-xs rounded-xl bg-[#1450d8] text-[15px] font-bold">
+                Ir al calendario
+              </button>
+            </>
+          ) : (
+            <>
+              <h2 className="mt-4 text-xl font-extrabold tracking-tight">Nada por aquí todavía</h2>
+              <p className="mt-2 max-w-sm text-sm text-slate-400">
+                Cuando Tocorito te resuelva algo que no es de una clase ni de un curso, su lección sale aquí, agrupada por tema.
+              </p>
+            </>
+          )}
         </Center>
       </Shell>
     );
   }
 
   return (
-    <Shell subtitle={pending ? "Primero, tu lección pendiente" : "Tus cursos"}>
+    <Shell subtitle={subtitle}>
+      {tabs}
       <CourseMap
         columns={columns}
         onNode={(column, node) => (pending && node.type === "pending" ? onOpenPending() : setSelected({ column, node }))}
