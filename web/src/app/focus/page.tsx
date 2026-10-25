@@ -70,7 +70,7 @@ export default function FocusPage() {
           <p className="mt-2 max-w-sm text-sm text-slate-400">
             Mira tú… ahora sí sabes lo que entregas de {view.topic}. La lección queda guardada aquí en Focus.
           </p>
-          {view.saved?.solution && <SaveImageButton lesson={view.saved} primary />}
+          {view.saved?.solution && <SaveImageButton lesson={view.saved} variant="primary" />}
           <button
             onClick={() => router.push("/")}
             className={`${view.saved?.solution ? "mt-2 border border-white/15" : "mt-6 bg-[#1450d8]"} min-h-12 w-full max-w-xs rounded-xl text-[15px] font-bold`}
@@ -173,14 +173,8 @@ export default function FocusPage() {
               <StepCard key={i} step={s} />
             ))}
           </div>
-          <div className="mt-6 flex flex-col items-center gap-2 pb-2">
-            <button
-              onClick={() => setView({ kind: "practice", id: saved.id, from: "lesson" })}
-              className="min-h-12 w-full max-w-xs rounded-xl bg-[#1450d8] text-[15px] font-bold"
-            >
-              Repetir lección y prueba
-            </button>
-            {saved.solution && <SaveImageButton lesson={saved} />}
+          {/* Repetir y Guardar imagen están en la lista de Focus, junto al nombre: aquí solo se lee. */}
+          <div className="mt-6 flex flex-col items-center pb-2">
             <button
               onClick={() => {
                 if (!window.confirm("¿Borrar esta lección de Focus?")) return;
@@ -453,7 +447,7 @@ function Home({
               <div key={l.id} className={`flex items-center ${i ? "border-t border-white/10" : ""}`}>
                 <button onClick={() => onOpenLesson(l.id)} className="flex min-h-14 min-w-0 flex-1 items-center gap-3 py-3 pl-4 pr-2 text-left active:bg-white/10">
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate font-semibold">{l.topic}</span>
+                    <span className="line-clamp-2 font-semibold leading-snug">{l.topic}</span>
                     <span className="block truncate text-xs text-slate-400">{l.task}</span>
                   </span>
                   {/* En el móvil la fecha se esconde para que quepa el nombre junto a "Repetir". */}
@@ -462,13 +456,18 @@ function Home({
                 <button
                   onClick={() => onPractice(l.id)}
                   aria-label={`Repetir lección y prueba: ${l.topic}`}
-                  className="mr-3 flex min-h-11 shrink-0 items-center gap-1.5 rounded-full bg-[#1450d8] px-3.5 text-sm font-bold text-white active:bg-[#1450d8]/80"
+                  className={`${l.solution ? "mr-2" : "mr-3"} flex min-h-11 shrink-0 items-center gap-1.5 rounded-full bg-[#1450d8] px-3.5 text-sm font-bold text-white active:bg-[#1450d8]/80`}
                 >
                   <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2.4} aria-hidden>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M4 12a8 8 0 1 0 2.3-5.6M4 4v4h4" />
                   </svg>
                   Repetir
                 </button>
+                {l.solution && (
+                  <span className="mr-3 shrink-0">
+                    <SaveImageButton lesson={l} variant="icon" />
+                  </span>
+                )}
               </div>
             ))}
           </div>
@@ -478,7 +477,8 @@ function Home({
   );
 }
 
-function SaveImageButton({ lesson, primary = false }: { lesson: Pick<SavedLesson, "topic" | "task" | "solution">; primary?: boolean }) {
+/** "primary": botón grande (al terminar el Focus). "icon": botón redondo para la lista de lecciones. */
+function SaveImageButton({ lesson, variant }: { lesson: Pick<SavedLesson, "topic" | "task" | "solution">; variant: "primary" | "icon" }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   async function save() {
@@ -492,12 +492,33 @@ function SaveImageButton({ lesson, primary = false }: { lesson: Pick<SavedLesson
       setSaving(false);
     }
   }
+  if (variant === "icon") {
+    const label = error ?? (saving ? "Creando imagen…" : `Guardar imagen de la solución: ${lesson.topic}`);
+    return (
+      <button
+        onClick={save}
+        disabled={saving}
+        aria-label={label}
+        title={label}
+        className={`flex h-11 w-11 items-center justify-center rounded-full border transition disabled:opacity-60 ${
+          error ? "border-red-400 text-red-300" : "border-white/20 text-slate-200 active:bg-white/10"
+        }`}
+      >
+        {/* Icono de imagen con flecha de descarga */}
+        <svg viewBox="0 0 24 24" className={`h-5 w-5 ${saving ? "animate-pulse" : ""}`} fill="none" stroke="currentColor" strokeWidth={2} aria-hidden>
+          <rect x="3.5" y="4" width="17" height="13" rx="2" />
+          <path strokeLinecap="round" strokeLinejoin="round" d="M3.5 14l4.5-4 4 3.5 3-2.5 5 4" />
+          <path strokeLinecap="round" strokeLinejoin="round" d="M12 17.5v4M9.8 19.5L12 21.6l2.2-2.1" />
+        </svg>
+      </button>
+    );
+  }
   return (
     <>
       <button
         onClick={save}
         disabled={saving}
-        className={`${primary ? "mt-6 bg-[#e5262b]" : "border border-white/15"} min-h-12 w-full max-w-xs rounded-xl text-[15px] font-bold disabled:opacity-60`}
+        className="mt-6 min-h-12 w-full max-w-xs rounded-xl bg-[#e5262b] text-[15px] font-bold disabled:opacity-60"
       >
         {saving ? "Creando imagen…" : "Guardar imagen de la solución"}
       </button>
