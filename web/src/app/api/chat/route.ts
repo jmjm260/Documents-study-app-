@@ -5,7 +5,8 @@
 //   {"type":"done","replies":[...],"actions":[...],"removals":["id"],"level":"medium","sip":true,"focus":null}  ← versión final limpia
 //                                                     (sip = Tocorito toma café: el navegador lo anima;
 //                                                      focus = {course, topic, task} si resolvió una tarea → mini lección;
-//                                                      review = clase si anotó un examen de una clase con lecciones → repaso)
+//                                                      review = clase si anotó un examen de una clase con lecciones → repaso;
+//                                                      course = {topic, level, goal, context} si pidió un curso)
 //   {"type":"error","error":"..."}
 // El navegador solo manda el NIVEL (instant/medium/high); el servidor decide modelo y parámetros.
 // No registramos el contenido de los mensajes ni del calendario.
@@ -20,6 +21,7 @@ import { ChatInputError, splitReply, validateMessages } from "@/lib/chat";
 import { calendarData, extractActions, validateContext } from "@/lib/chat-actions";
 import { createSupabaseServer, supabaseConfigured } from "@/lib/supabase/server";
 import { extractCoffee } from "@/lib/coffee";
+import { extractCourseRequest } from "@/lib/courses";
 import { extractFocus, extractReview, lessonIndexText, sameCourse, validateLessonIndex } from "@/lib/focus";
 
 export const runtime = "nodejs";
@@ -91,9 +93,11 @@ export async function POST(request: Request) {
         // [[REPASO]]: anotó un examen de una clase con lecciones guardadas → prueba de repaso en Focus.
         const { text: withoutReview, review: reviewCourse } = extractReview(withoutFocus);
         const review = reviewCourse && lessonIndex.some((l) => sameCourse(l.course, reviewCourse)) ? reviewCourse : null;
-        const { text, sip } = extractCoffee(withoutReview);
+        // [[CURSO]]: el estudiante pidió (o aceptó) un curso → el navegador lo crea en segundo plano.
+        const { text: withoutCourse, course } = extractCourseRequest(withoutReview);
+        const { text, sip } = extractCoffee(withoutCourse);
         const replies = text ? splitReply(text) : ["Listo, anotado."];
-        send({ type: "done", replies, actions: context ? actions : [], removals: context ? removals : [], level, sip, focus, review });
+        send({ type: "done", replies, actions: context ? actions : [], removals: context ? removals : [], level, sip, focus, review, course });
         recordUsage({ provider: provider.id, level, ...usage, firstTokenMs, totalMs: Date.now() - started });
       } catch (err) {
         console.error(`chat (${provider.id}, ${level}): fallo:`, err instanceof Error ? err.message : "desconocido");

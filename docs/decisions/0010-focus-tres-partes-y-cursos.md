@@ -24,6 +24,14 @@ El dueño definió tres partes para Focus:
     lee una lección, Tocorito prepara **en segundo plano** la siguiente (y la prueba de la unidad si es la
     última). Cada diapositiva de explicación pide **20 s mínimo** la primera vez (leer y entender, y le da
     tiempo a Tocorito); las preguntas no esperan, y al repetir una lección hecha tampoco.
+  - **Investigación previa** (razonamiento alto): antes del índice, Tocorito escribe un "Plan de Tocorito"
+    (objetivo realista, punto de partida, ruta, práctica, errores típicos, tiempo) y el índice lo sigue.
+    Es con lo que sabe el modelo: **no busca en internet** (eso sería un servicio nuevo con costo, a decidir).
+  - **Desde el chat**: si el estudiante quiere aprender algo, Tocorito le ofrece un curso; si acepta, escribe
+    `[[CURSO]]{tema, nivel, objetivo, contexto}` con un resumen de lo hablado (sin datos personales) y la app
+    lo crea **en segundo plano** (aviso en el chat → "Abrir"). Desde Focus, "Nuevo curso" también va en segundo plano.
+  - El curso queda "creándose" hasta que su primera lección está lista; si se cierra la app a mitad, pasa a
+    "falló" (con Reintentar). Si el tema no es apto, queda "rechazado" con la frase de Tocorito.
   - Desbloqueo en orden como Duolingo; el trofeo de cada unidad (prueba de la unidad) usa la misma IA de
     los repasos con las lecciones de esa unidad.
   - Camino en zigzag con banners por unidad y Tocorito junto a la lección que toca.
@@ -31,8 +39,9 @@ El dueño definió tres partes para Focus:
 
 ## Costo
 
-Sin servicios ni dependencias nuevas. Gasta tokens de IA: 1 llamada por curso (índice) + 1 por lección
-abierta + 1 por prueba de unidad. Un curso completo de 15 lecciones ≈ 20 llamadas. Contar en los límites por plan.
+Sin servicios ni dependencias nuevas. Gasta tokens de IA: 2 llamadas al crear (investigación con
+razonamiento alto + índice) + 1 por lección + 1 por prueba de unidad. Un curso de 20 lecciones ≈ 27 llamadas.
+Contar en los límites por plan.
 
 ## Pendiente
 

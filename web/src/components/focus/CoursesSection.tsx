@@ -5,6 +5,7 @@
 // trofeo (prueba de la unidad) al final de cada unidad. Las lecciones se generan al abrirlas.
 import { useEffect, useState } from "react";
 import TocoritoFigure from "@/components/chat/TocoritoFigure";
+import RichText from "@/components/RichText";
 import Sheet from "@/components/Sheet";
 import {
   COURSE_STEP_SECONDS,
@@ -20,12 +21,13 @@ import {
 import {
   completeCourseLesson,
   completeUnitTest,
-  createCourse,
   deleteCourse,
   ensureCourseLesson,
   ensureUnitTest,
   loadCourses,
   prefetchAhead,
+  retryCourse,
+  startCourseCreation,
 } from "@/lib/courses-store";
 import type { Lesson, QuizQuestion } from "@/lib/focus";
 import { COURSE_COLORS } from "@/lib/focus-map";
@@ -39,9 +41,10 @@ type View =
   | { kind: "test"; id: string; unit: number }
   | { kind: "done"; id: string; title: string; text: string };
 
-export default function CoursesSection({ tabs }: { tabs: React.ReactNode }) {
+export default function CoursesSection({ tabs, openCourseId }: { tabs: React.ReactNode; openCourseId?: string | null }) {
   const [courses, setCourses] = useState<Course[]>([]);
-  const [view, setView] = useState<View>({ kind: "list" });
+  // Desde el chat ("Abrir"): Focus entra directo en ese curso.
+  const [view, setView] = useState<View>(openCourseId ? { kind: "course", id: openCourseId } : { kind: "list" });
   const [creating, setCreating] = useState(false);
 
   useEffect(() => {
@@ -114,7 +117,8 @@ export default function CoursesSection({ tabs }: { tabs: React.ReactNode }) {
 
   if (view.kind === "course") {
     const course = find(view.id);
-    if (course) {
+    // Mientras se crea (o si falló) se ve su tarjeta en la lista, no el camino.
+    if (course && !course.status) {
       return (
         <CoursePath
           course={course}
@@ -147,6 +151,7 @@ export default function CoursesSection({ tabs }: { tabs: React.ReactNode }) {
       ) : (
         <div className="flex flex-col gap-3">
           {courses.map((c, i) => {
+            if (c.status) return <PendingCourseCard key={c.id} course={c} />;
             const p = courseProgress(c);
             const color = COURSE_COLORS[i % COURSE_COLORS.length];
             return (
@@ -176,45 +181,61 @@ export default function CoursesSection({ tabs }: { tabs: React.ReactNode }) {
           </button>
         </div>
       )}
-      {creating && (
-        <NewCourseSheet
-          onClose={() => setCreating(false)}
-          onCreated={(id) => {
-            setCreating(false);
-            setView({ kind: "course", id });
-          }}
-        />
-      )}
+      {creating && <NewCourseSheet onClose={() => setCreating(false)} />}
     </Shell>
   );
 }
 
-function NewCourseSheet({ onClose, onCreated }: { onClose: () => void; onCreated: (id: string) => void }) {
+/** Tarjeta de un curso que se está creando, que falló o que Tocorito rechazó. */
+function PendingCourseCard({ course }: { course: Course }) {
+  return (
+    <div className="flex items-center gap-3 rounded-2xl border border-white/10 p-4" role="status">
+      <TocoritoFigure height={56} sipping={course.status === "creating"} />
+      <div className="min-w-0 flex-1">
+        <p className="truncate font-bold">{course.title}</p>
+        {course.status === "creating" ? (
+          <p className="text-xs text-slate-400">
+            <span className="mr-1.5 inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-[#f59e0b] align-middle" />
+            Tocorito investiga cómo aprenderlo y arma tu curso…
+          </p>
+        ) : (
+          <p className="text-xs text-slate-300">{course.note ?? "No pude crear el curso."}</p>
+        )}
+        {course.status !== "creating" && (
+          <div className="mt-2 flex gap-2">
+            {course.status === "failed" && (
+              <button onClick={() => retryCourse(course.id)} className="min-h-9 rounded-lg bg-[#1450d8] px-3 text-sm font-bold">
+                Reintentar
+              </button>
+            )}
+            <button onClick={() => deleteCourse(course.id)} className="min-h-9 rounded-lg border border-white/15 px-3 text-sm font-bold text-slate-300">
+              Quitar
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Pide el curso y se cierra al momento: Tocorito investiga y lo arma en segundo plano. */
+function NewCourseSheet({ onClose }: { onClose: () => void }) {
   const [topic, setTopic] = useState("");
+  const [goal, setGoal] = useState("");
   const [level, setLevel] = useState<CourseLevel>("principiante");
-  const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
-  async function create() {
+  function create() {
     if (topic.trim().length < 3) {
       setMessage("Dime un poco más de qué quieres aprender.");
       return;
     }
-    setBusy(true);
-    setMessage(null);
-    try {
-      const result = await createCourse(topic.trim(), level);
-      if ("refusal" in result) setMessage(result.refusal);
-      else onCreated(result.course.id);
-    } catch (err) {
-      setMessage(err instanceof Error ? err.message : "No pude crear el curso.");
-    } finally {
-      setBusy(false);
-    }
+    startCourseCreation({ topic: topic.trim(), level, goal: goal.trim() || undefined });
+    onClose();
   }
 
   return (
-    <Sheet title="Nuevo curso" onClose={busy ? () => {} : onClose} dark>
+    <Sheet title="Nuevo curso" onClose={onClose} dark>
       <label className="text-sm font-semibold text-slate-300" htmlFor="course-topic">
         ¿Qué quieres aprender?
       </label>
@@ -230,6 +251,17 @@ function NewCourseSheet({ onClose, onCreated }: { onClose: () => void; onCreated
         placeholder="Programar en Python desde cero"
         className="mt-2 w-full resize-none rounded-xl border border-white/15 bg-[#161618] px-3 py-2.5 text-[15px] text-white outline-none placeholder:text-slate-500 focus:border-[#1450d8]"
       />
+      <label className="mt-4 block text-sm font-semibold text-slate-300" htmlFor="course-goal">
+        ¿Para qué lo quieres? <span className="font-normal text-slate-500">(opcional)</span>
+      </label>
+      <input
+        id="course-goal"
+        value={goal}
+        onChange={(e) => setGoal(e.target.value)}
+        maxLength={200}
+        placeholder="Hacer mi primer videojuego"
+        className="mt-2 min-h-11 w-full rounded-xl border border-white/15 bg-[#161618] px-3 text-[15px] text-white outline-none placeholder:text-slate-500 focus:border-[#1450d8]"
+      />
       <p className="mt-4 text-sm font-semibold text-slate-300">Nivel</p>
       <div className="mt-2 flex rounded-xl bg-[#161618] p-1">
         {LEVELS.map((l) => (
@@ -244,8 +276,9 @@ function NewCourseSheet({ onClose, onCreated }: { onClose: () => void; onCreated
         ))}
       </div>
       {message && <p className="mt-3 rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-slate-200">{message}</p>}
-      <button onClick={create} disabled={busy} className="mb-2 mt-5 min-h-12 w-full rounded-xl bg-[#1450d8] text-[15px] font-bold text-white disabled:opacity-60">
-        {busy ? "Tocorito arma tu curso y tu primera lección…" : "Crear curso"}
+      <p className="mt-4 text-xs text-slate-500">Tocorito primero investiga cómo aprenderlo para tu objetivo. Tarda un poco: puedes seguir usando la app.</p>
+      <button onClick={create} className="mb-2 mt-3 min-h-12 w-full rounded-xl bg-[#1450d8] text-[15px] font-bold text-white">
+        Crear curso
       </button>
     </Sheet>
   );
@@ -286,6 +319,16 @@ function CoursePath({
   }, []);
   return (
     <Shell subtitle={`${course.title} · ${p.done} de ${p.total}`} progress={p.done / p.total} onBack={onBack}>
+      {(course.goal || course.plan) && (
+        // La investigación de Tocorito: cómo pensó llegar al objetivo (plegada para no tapar el camino).
+        <details className="mb-5 rounded-2xl border border-white/10 px-4 py-3">
+          <summary className="flex min-h-8 cursor-pointer items-center justify-between text-sm font-bold">
+            Plan de Tocorito
+            {course.goal && <span className="ml-3 truncate text-xs font-normal text-slate-400">Meta: {course.goal}</span>}
+          </summary>
+          {course.plan && <PlanText text={course.plan} />}
+        </details>
+      )}
       {course.units.map((unit, ui) => {
         const color = COURSE_COLORS[ui % COURSE_COLORS.length];
         const testOpen = isUnitTestUnlocked(course, ui);
@@ -360,6 +403,24 @@ function CoursePath({
         Borrar curso
       </button>
     </Shell>
+  );
+}
+
+/** El plan llega en Markdown sencillo: "# Título" como encabezado, y **negrita** / listas tal cual. */
+function PlanText({ text }: { text: string }) {
+  return (
+    <div className="mt-2 text-sm leading-relaxed text-slate-300">
+      {text.split("\n").map((line, i) => {
+        const heading = /^#{1,4}\s+(.*)$/.exec(line.trim());
+        if (heading) return <p key={i} className="mt-3 font-bold text-white first:mt-0">{heading[1]}</p>;
+        if (!line.trim()) return null;
+        return (
+          <p key={i} className="mt-1 whitespace-pre-wrap break-words">
+            <RichText text={line} />
+          </p>
+        );
+      })}
+    </div>
   );
 }
 

@@ -6,9 +6,65 @@ import { once, postJson, read, write } from "./focus-store";
 
 const KEY = "tocorito.focus.courses.v1";
 
+/** Si un curso lleva más de esto "creándose", es que se cerró la app a mitad: se marca como fallido. */
+const STALE_MS = 5 * 60_000;
+
 export function loadCourses(): Course[] {
   const list = read<Course[]>(KEY, []);
-  return Array.isArray(list) ? list.filter((c) => typeof c?.id === "string" && Array.isArray(c.units)) : [];
+  if (!Array.isArray(list)) return [];
+  return list
+    .filter((c) => typeof c?.id === "string" && Array.isArray(c.units))
+    .map((c) =>
+      c.status === "creating" && !creating.has(c.id) && Date.now() - c.createdAt > STALE_MS
+        ? { ...c, status: "failed" as const, note: "Se cortó mientras se creaba." }
+        : c
+    );
+}
+
+// Cursos que se están creando ahora mismo en esta pestaña (la creación sigue aunque cambies de pantalla).
+const creating = new Set<string>();
+
+/**
+ * Crea un curso en SEGUNDO PLANO (desde el chat o desde Focus): guarda al momento un curso "creándose",
+ * Tocorito investiga cómo aprenderlo, arma el índice y deja lista la primera lección. Devuelve el id ya.
+ */
+export function startCourseCreation(req: { topic: string; level: CourseLevel; goal?: string; context?: string }): string {
+  const id = crypto.randomUUID();
+  saveCourse({ id, title: req.topic, topic: req.topic, level: req.level, createdAt: Date.now(), units: [], status: "creating", ...(req.goal ? { goal: req.goal } : {}) });
+  void runCreation(id, req);
+  return id;
+}
+
+/** Reintenta un curso que falló (mismo tema, nivel y objetivo). */
+export function retryCourse(id: string) {
+  const c = latest(id);
+  if (!c) return;
+  saveCourse({ ...c, status: "creating", note: undefined, createdAt: Date.now() });
+  void runCreation(id, { topic: c.topic, level: c.level, goal: c.goal });
+}
+
+async function runCreation(id: string, req: { topic: string; level: CourseLevel; goal?: string; context?: string }) {
+  creating.add(id);
+  try {
+    const data = await postJson<{ outline?: CourseOutline; plan?: string; refusal?: string }>("/api/focus/course", req, "No pude crear el curso.");
+    if (!latest(id)) return; // lo borró mientras se creaba
+    if (data.refusal) {
+      saveCourse({ ...latest(id)!, status: "refused", note: data.refusal });
+      return;
+    }
+    if (!data.outline) throw new Error("No pude crear el curso.");
+    // Sigue "creándose" hasta que la primera lección esté lista: así al abrirlo no se espera nada.
+    const course: Course = { ...outlineToCourse(data.outline, req.topic, req.level, id, Date.now(), { goal: req.goal, plan: data.plan }), status: "creating" };
+    saveCourse(course);
+    // Si la primera lección falla, el curso queda listo igual y se pide al abrirla.
+    await ensureCourseLesson(course, { unit: 0, lesson: 0 }).catch(() => {});
+    const done = latest(id);
+    if (done) saveCourse({ ...done, status: undefined });
+  } catch (err) {
+    if (latest(id)) saveCourse({ ...latest(id)!, status: "failed", note: err instanceof Error ? err.message : "No pude crear el curso." });
+  } finally {
+    creating.delete(id);
+  }
 }
 
 function saveCourse(course: Course) {
@@ -18,21 +74,6 @@ function saveCourse(course: Course) {
 
 export function deleteCourse(id: string) {
   write(KEY, loadCourses().filter((c) => c.id !== id));
-}
-
-/**
- * Tocorito arma el índice del curso y deja YA lista la primera lección (así el estudiante no espera al entrar).
- * Devuelve el curso guardado, o el rechazo si el tema no es apropiado.
- */
-export async function createCourse(topic: string, level: CourseLevel): Promise<{ course: Course } | { refusal: string }> {
-  const data = await postJson<{ outline?: CourseOutline; refusal?: string }>("/api/focus/course", { topic, level }, "No pude crear el curso.");
-  if (data.refusal) return { refusal: data.refusal };
-  if (!data.outline) throw new Error("No pude crear el curso.");
-  const course = outlineToCourse(data.outline, topic, level, crypto.randomUUID(), Date.now());
-  saveCourse(course);
-  // Si la primera lección falla, el curso queda creado igual: se volverá a pedir al abrirla.
-  await ensureCourseLesson(course, { unit: 0, lesson: 0 }).catch(() => {});
-  return { course: latest(course.id) ?? course };
 }
 
 /**
@@ -48,7 +89,30 @@ export function prefetchAhead(courseId: string, ref: LessonRef) {
   if (ref.lesson === course.units[ref.unit].lessons.length - 1) ensureUnitTest(course, ref.unit).catch(() => {});
 }
 
-const latest = (id: string) => loadCourses().find((c) => c.id === id);
+function latest(id: string) {
+  return loadCourses().find((c) => c.id === id);
+}
+
+// Pedir desde el chat que Focus se abra en un curso concreto (al tocar "Abrir").
+const OPEN_KEY = "tocorito.focus.openCourse";
+
+export function requestOpenCourse(id: string) {
+  try {
+    sessionStorage.setItem(OPEN_KEY, id);
+  } catch {
+    // Sin almacenamiento: Focus se abre en la lista de cursos.
+  }
+}
+
+export function takeOpenCourse(): string | null {
+  try {
+    const id = sessionStorage.getItem(OPEN_KEY);
+    sessionStorage.removeItem(OPEN_KEY);
+    return id;
+  } catch {
+    return null;
+  }
+}
 
 /** La lección (si ya existe) o la pide a la IA y la guarda. */
 export function ensureCourseLesson(course: Course, ref: LessonRef): Promise<Lesson> {

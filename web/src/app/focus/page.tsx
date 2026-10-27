@@ -37,6 +37,7 @@ import {
   type SavedLesson,
 } from "@/lib/focus-store";
 import { loadCanvasCache, loadEntries, loadHiddenCanvas, toCalendarItems } from "@/lib/entries";
+import { takeOpenCourse } from "@/lib/courses-store";
 import { saveSolutionImage } from "@/lib/solution-image";
 
 const TAB_KEY = "tocorito.focus.tab";
@@ -62,7 +63,15 @@ export default function FocusPage() {
   const [mapWhilePending, setMapWhilePending] = useState(false);
   // Parte de Focus abierta (se recuerda en este dispositivo).
   const [tab, setTab] = useState<FocusTab>("escuela");
+  // Si se llega desde el aviso del chat ("Abrir"), se entra directo en ese curso.
+  const [openCourseId, setOpenCourseId] = useState<string | null>(null);
   useEffect(() => {
+    const open = takeOpenCourse();
+    if (open) {
+      setOpenCourseId(open);
+      setTab("cursos");
+      return;
+    }
     try {
       const saved = localStorage.getItem(TAB_KEY);
       if (FOCUS_TABS.some((t) => t.id === saved)) setTab(saved as FocusTab);
@@ -237,7 +246,7 @@ export default function FocusPage() {
   }
 
   const tabs = <FocusTabs value={tab} onChange={chooseTab} />;
-  if (tab === "cursos") return <CoursesSection tabs={tabs} />;
+  if (tab === "cursos") return <CoursesSection key={openCourseId ?? "lista"} tabs={tabs} openCourseId={openCourseId} />;
   return <MapHome section={tab} tabs={tabs} library={library} reviews={reviews} pending={null} onOpenPending={() => {}} setView={setView} />;
 }
 

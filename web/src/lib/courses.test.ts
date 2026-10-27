@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   courseProgress,
   currentLesson,
+  extractCourseRequest,
+  outlinePrompt,
+  parseResearch,
   isUnitTestUnlocked,
   isUnlocked,
   nextLesson,
@@ -76,10 +79,35 @@ describe("progreso", () => {
   });
 });
 
+describe("investigación y chat", () => {
+  it("parseResearch: plan, rechazo o nada", () => {
+    expect(parseResearch("RECHAZO: Eso no, asere.")).toEqual({ refusal: "Eso no, asere." });
+    expect(parseResearch("corto")).toBeNull();
+    const plan = "Objetivo realista: hacer un juego 2D. ".repeat(4);
+    expect(parseResearch(plan)).toEqual({ plan: plan.trim() });
+  });
+
+  it("extractCourseRequest saca el bloque del chat y limpia el texto", () => {
+    const r = extractCourseRequest(
+      'Va, te lo armo. Lo verás en Focus → Cursos.\n[[CURSO]]{"tema":"Python para videojuegos","nivel":"principiante","objetivo":"Su primer juego 2D","contexto":"Nunca programó"}[[/CURSO]]'
+    );
+    expect(r.text).toBe("Va, te lo armo. Lo verás en Focus → Cursos.");
+    expect(r.course).toEqual({ topic: "Python para videojuegos", level: "principiante", goal: "Su primer juego 2D", context: "Nunca programó" });
+    expect(extractCourseRequest("Hola").course).toBeNull();
+  });
+
+  it("el índice usa la investigación y el contexto del chat", () => {
+    const prompt = outlinePrompt({ topic: "guitarra", level: "principiante", goal: "Tocar 3 canciones", context: "Tiene guitarra acústica" }, "PLAN X");
+    expect(prompt).toContain("Mi objetivo: Tocar 3 canciones");
+    expect(prompt).toContain("Tiene guitarra acústica");
+    expect(prompt).toContain("PLAN X");
+  });
+});
+
 describe("validación", () => {
   it("pedido de curso: tema mínimo y nivel válido", () => {
     expect(validateCourseRequest({ topic: "ab" })).toBeNull();
-    expect(validateCourseRequest({ topic: "guitarra", level: "experto" })).toEqual({ topic: "guitarra", level: "principiante" });
+    expect(validateCourseRequest({ topic: "guitarra", level: "experto" })).toEqual({ topic: "guitarra", level: "principiante", goal: "", context: "" });
   });
 
   it("pedido de lección: exige curso, unidad y título", () => {

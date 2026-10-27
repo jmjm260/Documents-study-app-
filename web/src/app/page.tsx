@@ -18,7 +18,9 @@ import { MAX_CHARS, MAX_IMAGES, type ChatMessage } from "@/lib/chat";
 import { actionNote, MAX_CONTEXT_ITEMS, removalNote, type ChatContext } from "@/lib/chat-actions";
 import { extractCoffee } from "@/lib/coffee";
 import type { FocusTopic } from "@/lib/focus";
-import { lessonIndex, loadFocus, startFocus, startReview, takeChatPrefill } from "@/lib/focus-store";
+import type { Course, CourseRequest } from "@/lib/courses";
+import { loadCourses, requestOpenCourse, startCourseCreation } from "@/lib/courses-store";
+import { FOCUS_EVENT, lessonIndex, loadFocus, startFocus, startReview, takeChatPrefill } from "@/lib/focus-store";
 import type { UiMessage } from "@/lib/conversations";
 import {
   addEntries,
@@ -172,6 +174,21 @@ export default function Chat() {
   const [goingToFocus, setGoingToFocus] = useState(false);
   // Prueba de repaso recién creada (anotó un examen de una clase con lecciones guardadas).
   const [reviewReady, setReviewReady] = useState<string | null>(null);
+  // Curso que Tocorito está creando desde el chat (en segundo plano): aviso abajo hasta que se abra o se cierre.
+  const [courseNoticeId, setCourseNoticeId] = useState<string | null>(null);
+  const [noticeCourse, setNoticeCourse] = useState<Course | null>(null);
+  useEffect(() => {
+    // Al volver al chat con un curso aún creándose, se sigue viendo el aviso.
+    const creating = loadCourses().filter((c) => c.status === "creating").sort((a, b) => b.createdAt - a.createdAt)[0];
+    if (creating) setCourseNoticeId(creating.id);
+  }, []);
+  useEffect(() => {
+    if (!courseNoticeId) return setNoticeCourse(null);
+    const sync = () => setNoticeCourse(loadCourses().find((c) => c.id === courseNoticeId) ?? null);
+    sync();
+    window.addEventListener(FOCUS_EVENT, sync);
+    return () => window.removeEventListener(FOCUS_EVENT, sync);
+  }, [courseNoticeId]);
   const focusAfterSpeech = useRef(false);
   useEffect(() => {
     if (loadFocus()) router.replace("/focus");
@@ -346,6 +363,9 @@ export default function Chat() {
             const review = startReview(reviewCourse, exam ? `${exam.title}, ${exam.date}` : "");
             if (review) setReviewReady(review.course);
           }
+          // Pidió (o aceptó) un curso: Tocorito lo investiga y lo arma en segundo plano, con el contexto del chat.
+          const courseReq = ev.course as CourseRequest | null;
+          if (courseReq) setCourseNoticeId(startCourseCreation(courseReq));
           speech.update(ev.replies as string[], true);
         }
       }
@@ -510,6 +530,35 @@ export default function Chat() {
           <div className="bubble-in mx-auto mb-2 flex max-w-3xl items-center gap-2 rounded-xl border border-[#e5262b]/60 bg-[#e5262b]/10 px-3 py-2 text-sm text-red-100" role="status">
             <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-[#e5262b]" />
             Ahora te toca Focus: mini lección y prueba sobre esta tarea. Te llevo…
+          </div>
+        )}
+        {noticeCourse && !goingToFocus && (
+          <div className="bubble-in mx-auto mb-2 flex max-w-3xl items-center gap-2 rounded-xl border border-[#0f766e]/70 bg-[#0f766e]/15 py-1.5 pl-3 pr-1.5 text-sm text-teal-50" role="status">
+            {noticeCourse.status === "creating" && <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-[#f59e0b]" />}
+            <span className="min-w-0 flex-1">
+              {noticeCourse.status === "creating"
+                ? `Tocorito investiga cómo aprender «${noticeCourse.title}» y arma tu curso…`
+                : noticeCourse.status
+                  ? noticeCourse.note ?? "No pude crear el curso."
+                  : `Tu curso «${noticeCourse.title}» está listo en Focus.`}
+            </span>
+            {!noticeCourse.status && (
+              <button
+                onClick={() => {
+                  requestOpenCourse(noticeCourse.id);
+                  setCourseNoticeId(null);
+                  router.push("/focus");
+                }}
+                className="min-h-9 shrink-0 rounded-lg bg-[#0f766e] px-3 text-sm font-bold text-white"
+              >
+                Abrir
+              </button>
+            )}
+            <button onClick={() => setCourseNoticeId(null)} aria-label="Cerrar aviso" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-teal-100 active:bg-white/10">
+              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2.5} aria-hidden>
+                <path strokeLinecap="round" d="M6 6l12 12M18 6L6 18" />
+              </svg>
+            </button>
           </div>
         )}
         {reviewReady && !goingToFocus && (

@@ -11,19 +11,106 @@ export type CourseLevel = (typeof LEVELS)[number];
 
 export type CourseLesson = { title: string; goal: string; lesson: Lesson | null; doneAt?: number };
 export type CourseUnit = { title: string; lessons: CourseLesson[]; test: { quiz: QuizQuestion[] | null; doneAt?: number } };
-export type Course = { id: string; title: string; topic: string; level: CourseLevel; createdAt: number; units: CourseUnit[] };
+export type Course = {
+  id: string;
+  title: string;
+  topic: string;
+  level: CourseLevel;
+  createdAt: number;
+  units: CourseUnit[];
+  /** Lo que el estudiante quiere lograr (del chat o del formulario). */
+  goal?: string;
+  /** Plan de Tocorito: la investigación previa de cómo se aprende esto para lograr el objetivo. */
+  plan?: string;
+  /** Mientras se crea en segundo plano: "creating"; si falló: "failed"; si el tema no es apto: "refused". */
+  status?: "creating" | "failed" | "refused";
+  /** Mensaje de Tocorito si lo rechazó, o del error. */
+  note?: string;
+};
 
 /** Índice que devuelve la IA al crear el curso (todavía sin lecciones generadas). */
 export type CourseOutline = { title: string; units: { title: string; lessons: { title: string; goal: string }[] }[] };
 
 const clean = (v: unknown, max: number) => (typeof v === "string" ? v.replace(/\s+/g, " ").trim().slice(0, max) : "");
 
-export function validateCourseRequest(input: unknown): { topic: string; level: CourseLevel } | null {
+export type CourseRequest = { topic: string; level: CourseLevel; goal: string; context: string };
+
+export function validateCourseRequest(input: unknown): CourseRequest | null {
   const b = input as Record<string, unknown> | null;
   const topic = clean(b?.topic, 160);
   if (topic.length < 3) return null;
   const level = LEVELS.includes(b?.level as CourseLevel) ? (b!.level as CourseLevel) : "principiante";
-  return { topic, level };
+  // Del chat: qué quiere lograr y un resumen de lo hablado (nivel, lo que ya sabe, tiempo…).
+  return { topic, level, goal: clean(b?.goal, 300), context: clean(b?.context, 1500) };
+}
+
+/**
+ * Paso 1 (razonamiento alto): antes de diseñar, Tocorito investiga a fondo cómo se aprende esto para
+ * lograr el objetivo. Con lo que sabe (no busca en internet). Si el tema no es apto, empieza por "RECHAZO:".
+ */
+export const COURSE_RESEARCH_SYSTEM = `Eres Tocorito, el tutor de estudio de la app (un tocororo cubano con gafas y café).
+Antes de diseñar un curso, INVESTIGAS A FONDO (con todo lo que sabes) cómo debe aprender esto el estudiante para
+lograr su objetivo. Piensa como un experto en la materia y en cómo se enseña.
+
+Escribe un plan en texto, en el idioma del estudiante, de 200 a 350 palabras, con estas partes (títulos cortos):
+- Objetivo realista: qué podrá hacer al terminar.
+- Punto de partida: qué necesita saber antes y qué asumes por lo que dijo.
+- Ruta: las etapas en orden, como la enseñan los buenos cursos y currículos de esa materia, y por qué ese orden.
+- Práctica: qué debe hacer con sus manos (ejercicios, proyectos) para que se le quede.
+- Errores típicos: los que más frenan a quien empieza y cómo evitarlos.
+- Tiempo: cuánto le tomará de forma realista con práctica diaria corta.
+
+Público: adolescentes (13+) y adultos. Si el tema no es apropiado para un adolescente (sexo explícito, drogas,
+armas, hacer daño, odio, apuestas…) o no se puede aprender, responde SOLO una línea que empiece por
+"RECHAZO:" seguida de una frase corta con tu tono pasivo-agresivo, sin sermones.`;
+
+/** Lee el plan (o el rechazo) de la investigación. */
+export function parseResearch(raw: string): { plan: string } | { refusal: string } | null {
+  const text = raw.trim();
+  const refusal = /^\s*RECHAZO:\s*([\s\S]+)/i.exec(text);
+  if (refusal) return { refusal: clean(refusal[1], 300) };
+  return text.length >= 80 ? { plan: text.slice(0, 4000) } : null;
+}
+
+export function outlinePrompt(req: CourseRequest, plan: string): string {
+  return `Quiero aprender: ${req.topic}
+Nivel: ${req.level}
+${req.goal ? `Mi objetivo: ${req.goal}\n` : ""}${req.context ? `Lo que hablamos en el chat: ${req.context}\n` : ""}${
+    plan ? `\nTu investigación previa (síguela al diseñar el curso):\n${plan}\n` : ""
+  }
+Devuelve solo el JSON del índice.`;
+}
+
+/**
+ * Reglas para Tocorito en el chat: cuándo crear un curso desde la conversación.
+ * Escribe un bloque [[CURSO]] que la app convierte en un curso (con investigación previa) en segundo plano.
+ */
+export const COURSE_CHAT_RULES = `
+Cursos desde el chat: si el estudiante dice que quiere aprender algo por su cuenta o lograr una meta de aprendizaje
+(que no sea una tarea concreta), puedes OFRECERLE en una frase armarle un curso en Focus. Solo lo creas cuando él
+lo pide o acepta tu oferta. Entonces escribe al final de tu respuesta, en una sola línea (no lo ve):
+[[CURSO]]{"tema":"Python para hacer videojuegos","nivel":"principiante","objetivo":"Hacer su primer juego 2D","contexto":"Tiene 15 años, sabe usar la compu pero nunca programó; quiere practicar 20 min al día"}[[/CURSO]]
+- "tema": qué aprenderá, concreto. "nivel": principiante, intermedio o avanzado (según lo que dijo).
+- "objetivo": la meta en una frase. "contexto": resumen de lo hablado que sirva para diseñar el curso
+  (lo que ya sabe, cuánto tiempo tiene, para qué lo quiere). Nada de nombres ni datos personales.
+- Dile en una frase que vas a investigar cómo aprenderlo y que el curso aparecerá en Focus → Cursos.
+- Si el tema no es apropiado para un adolescente, no hay curso: dilo con tu tono, sin bloque.`;
+
+const COURSE_BLOCK = /\[\[CURSO\]\]([\s\S]*?)\[\[\/CURSO\]\]/g;
+
+/** Saca el bloque [[CURSO]] del texto del chat. Vale el primero válido. */
+export function extractCourseRequest(text: string): { text: string; course: CourseRequest | null } {
+  let course: CourseRequest | null = null;
+  for (const [, json] of text.matchAll(COURSE_BLOCK)) {
+    if (course) break;
+    try {
+      const raw = JSON.parse(json.trim()) as Record<string, unknown>;
+      course = validateCourseRequest({ topic: raw.tema, level: raw.nivel, goal: raw.objetivo, context: raw.contexto });
+    } catch {
+      // Bloque mal escrito: se ignora.
+    }
+  }
+  return { text: text.replace(COURSE_BLOCK, "").replace(/\n{3,}/g, "\n\n").trim(), course };
 }
 
 export const COURSE_OUTLINE_SYSTEM = `Eres Tocorito, el tutor de estudio de la app (un tocororo cubano con gafas y café).
@@ -144,13 +231,15 @@ export function courseProgress(course: Course): { done: number; total: number } 
   return { done: all.filter((l) => l.done).length, total: all.length };
 }
 
-export function outlineToCourse(outline: CourseOutline, topic: string, level: CourseLevel, id: string, now: number): Course {
+export function outlineToCourse(outline: CourseOutline, topic: string, level: CourseLevel, id: string, now: number, extra: { goal?: string; plan?: string } = {}): Course {
   return {
     id,
     title: outline.title,
     topic,
     level,
     createdAt: now,
+    ...(extra.goal ? { goal: extra.goal } : {}),
+    ...(extra.plan ? { plan: extra.plan } : {}),
     units: outline.units.map((u) => ({ title: u.title, lessons: u.lessons.map((l) => ({ ...l, lesson: null })), test: { quiz: null } })),
   };
 }
