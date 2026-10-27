@@ -14,4 +14,6 @@
 | Focus se salta en la web | El bloqueo vive en localStorage: borrar los datos del navegador lo quita | Con cuentas, guardar el Focus pendiente en el servidor (ADR 0008) | abierto |
 | Resolver tareas / "listas para entregar" | Escuelas pueden verlo como trampa; Apple revisa apps educativas con lupa | Focus obligatorio tras cada tarea resuelta; decidir aparte si se generan imágenes para entregar | abierto |
 | Cursos generados por IA | Gastan tokens (≈20 llamadas por curso completo) y el tema lo elige el estudiante | Lección generada al abrirla y guardada; Tocorito rechaza temas no aptos para 13+; poner límite de cursos por plan (ADR 0010) | abierto |
+| Preguntas SAT generadas por IA | Una clave errónea reinicia todo al estudiante; dificultad sin calibrar | Validación determinista + revisión independiente sin clave; reportar e impugnar (deshace el reinicio); calibrar con datos de uso (ADR 0011) | abierto |
+| Coste del entrenamiento SAT | Cada pregunta = generación + revisión con razonamiento alto | Lotes, tope de 400 preguntas nuevas/día por usuario, búfer limitado | abierto |
 | Plan gratis de Supabase | Se pausa tras ~1 semana sin uso; correo de pruebas con muy pocos envíos por hora; sin copias de seguridad | Antes de publicar: SMTP propio y plan Pro (ADR 0007) | abierto |

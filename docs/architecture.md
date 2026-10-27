@@ -67,4 +67,7 @@
 - Focus en tres pestañas (ADR 0010): Escuela (clases del calendario), Cursos y Libre (lo demás).
   `web/src/lib/courses.ts` + `courses-store.ts` + `web/src/components/focus/CoursesSection.tsx` + `web/src/app/api/focus/course/` —
   cursos que genera Tocorito: índice al crear, cada lección al abrirla, desbloqueo en orden y prueba por unidad (+ pruebas).
+- `web/src/lib/sat/` + `web/src/lib/server/sat-*.ts` + `web/src/app/api/sat/` + `web/src/app/sat/` — entrenamiento SAT Reading and Writing
+  (ADR 0011): temario de 11 familias, planificador A1→B1→A2, generación + revisión independiente, sin repetir, reinicio total,
+  reloj del servidor y fase de velocidad (+ pruebas). Entrada desde Focus → Cursos.
 - `web/src/lib/solution-image.ts` — imagen PNG limpia de la solución, dibujada en el dispositivo con canvas (gratis); se desbloquea al acabar el Focus (+ pruebas).

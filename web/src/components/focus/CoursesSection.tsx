@@ -3,6 +3,7 @@
 // Parte "Cursos" de Focus: el estudiante le pide a Tocorito un curso sobre lo que quiere aprender y lo
 // recorre como en Duolingo: unidades con un camino en zigzag, lecciones que se abren en orden y un
 // trofeo (prueba de la unidad) al final de cada unidad. Las lecciones se generan al abrirlas.
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import TocoritoFigure from "@/components/chat/TocoritoFigure";
 import RichText from "@/components/RichText";
@@ -137,6 +138,15 @@ export default function CoursesSection({ tabs, openCourseId }: { tabs: React.Rea
   return (
     <Shell subtitle="Lo que quieras aprender, con Tocorito">
       {tabs}
+      {/* Entrenamiento especial: SAT Reading and Writing (módulo propio con reinicios y cronómetro). */}
+      <Link href="/sat" className="mb-3 flex items-center gap-3 rounded-2xl border border-[#e5262b]/50 bg-[#e5262b]/10 p-4 active:bg-[#e5262b]/20">
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#e5262b] text-sm font-extrabold">SAT</span>
+        <span className="min-w-0 flex-1">
+          <span className="block font-bold">SAT Reading and Writing</span>
+          <span className="block text-xs text-red-100/80">Lecciones cortas, repasos y desafío de velocidad. Un error: nivel 1.</span>
+        </span>
+        <span className="text-sm font-bold">Entrar</span>
+      </Link>
       {courses.length === 0 ? (
         <Center>
           <TocoritoFigure height={120} />

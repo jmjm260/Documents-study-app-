@@ -32,7 +32,8 @@ export default function TabBar() {
     >
       <ul className="flex">
         {TABS.map(({ href, label, icon: Icon }) => {
-          const active = href === "/" ? pathname === "/" : pathname.startsWith(href);
+          // El entrenamiento SAT vive dentro de Focus.
+          const active = href === "/" ? pathname === "/" : pathname.startsWith(href) || (href === "/focus" && pathname.startsWith("/sat"));
           return (
             <li key={href} className="flex-1">
               <Link
