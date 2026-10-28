@@ -1,14 +1,21 @@
 import { describe, expect, it } from "vitest";
 import { EXTREME_MINUTES, GRACE_MS, MIN_GLOBAL_MS, QUESTION_MS } from "./config";
-import { answer, checkTimeout, initialState, newRound, reveal, roundPassed, startRound, undoFailure, type SatState } from "./engine";
+import { acceptRestore, answer, applyDefect, checkTimeout, curriculumAudit, initialState, microStatus, newRound, reveal, roundPassed, startRound, type SatState } from "./engine";
+import { MICROS } from "./curriculum";
 import type { Fingerprint } from "./items";
 
 const fp = (id: string): Fingerprint => ({ passage: id, stem: id, options: id, skeleton: id, minhash: [] });
 let counter = 0;
 
-/** Reserva una pregunta nueva para cada posición de la ronda (como hace el servidor). */
-function reserveAll(state: SatState) {
-  for (const s of state.round.slots) s.itemId ??= `item-${counter++}`;
+/**
+ * Reserva una pregunta nueva para cada posición de la ronda (como hace el servidor). `band` simula lo que
+ * dijo la revisión ciega de dificultad: en la banda avanzada hace falta "hard" o "por encima".
+ */
+function reserveAll(state: SatState, band = "hard") {
+  for (const s of state.round.slots) {
+    s.itemId ??= `item-${counter++}`;
+    s.band ??= band;
+  }
 }
 
 /** Responde bien la pregunta actual (clave "A"), tardando `ms` en contestar. */
@@ -171,17 +178,120 @@ describe("integridad", () => {
     expect(() => startRound(s, s.round.id)).toThrow();
   });
 
-  it("si la pregunta era defectuosa, se deshace el reinicio sin castigo", () => {
+});
+
+describe("defectos confirmados (el reporte por sí solo no cambia nada: eso lo prueba el servicio)", () => {
+  it("pregunta abierta defectuosa: se sustituye en la MISMA posición y hay que responderla", () => {
     const s = initialState(11, "r1");
+    reserveAll(s);
+    answerRight(s, 0);
+    reveal(s, s.round.id, 1, 100, fp("bad"), true);
+    const bad = s.round.slots[1].itemId!;
+    applyDefect(s, bad, 200);
+    expect(s.round.position).toBe(1); // no avanza
+    expect(s.round.slots[1].itemId).toBeNull(); // otra pregunta nueva
+    expect(s.metrics.correct).toBe(1); // no concede acierto
+    expect(s.seen.ids).toContain(bad); // sigue contando como vista
+  });
+
+  it("acierto en una pregunta defectuosa: se anula y esa posición se vuelve a pedir al final", () => {
+    const s = initialState(12, "r1");
+    reserveAll(s);
+    answerRight(s, 0);
+    const first = s.round.slots[0].itemId!;
+    applyDefect(s, first, 50);
+    expect(s.metrics.correct).toBe(0);
+    reserveAll(s);
+    for (let i = 1; i < s.round.size; i++) answerRight(s, 1000 * i);
+    // La ronda no se completa sin volver a la posición 0.
+    expect(s.round.position).toBe(0);
+    expect(s.level).toBe(1);
+    const r = answerRight(s, 99_000);
+    expect(r.roundComplete).toBe(true);
+    expect(s.level).toBe(2);
+  });
+
+  it("si causó el reinicio y aún no empezaste nada: se anula y vuelves a tu ronda", () => {
+    const s = initialState(13, "r1");
     passRound(s);
     reserveAll(s);
-    reveal(s, s.round.id, 0, 0, fp("bad"), true);
-    answer(s, { roundId: s.round.id, position: 0, choice: "B", nonce: "q" }, "A", 1);
+    answerRight(s, 0);
+    reveal(s, s.round.id, 1, 10, fp("bad"), true);
+    const bad = s.round.slots[1].itemId!;
+    answer(s, { roundId: s.round.id, position: 1, choice: "B", nonce: "q" }, "A", 20);
     expect(s.level).toBe(1);
-    expect(undoFailure(s, 2)).toBe(true);
+    applyDefect(s, bad, 30);
     expect(s.level).toBe(2);
-    expect(s.round.slots[0].itemId).toBeNull(); // se repone con una pregunta nueva
+    expect(s.round.position).toBe(1);
+    expect(s.round.slots[1].itemId).toBeNull();
     expect(s.metrics.resets).toBe(0);
-    expect(s.seen.ids).toContain(s.seen.ids[s.seen.ids.length - 1]); // lo visto sigue visto
+    expect(s.metrics.answered).toBe(22); // 21 de la ronda 1 + el acierto; el fallo inválido no cuenta
+  });
+
+  it("si ya seguiste después: no se borra lo nuevo; se OFRECE recuperar la ronda", () => {
+    const s = initialState(14, "r1");
+    passRound(s);
+    reserveAll(s);
+    reveal(s, s.round.id, 0, 10, fp("bad"), true);
+    const bad = s.round.slots[0].itemId!;
+    answer(s, { roundId: s.round.id, position: 0, choice: "B", nonce: "q" }, "A", 20);
+    reserveAll(s);
+    answerRight(s, 100); // ya avanzó en la ronda nueva
+    const answeredAfter = s.metrics.answered;
+    applyDefect(s, bad, 200);
+    expect(s.level).toBe(1); // no se pisó lo hecho
+    expect(s.round.position).toBe(1);
+    expect(s.restoreOffer).not.toBeNull();
+    expect(s.metrics.answered).toBe(answeredAfter - 1); // solo se quitó el intento inválido
+    acceptRestore(s, 300);
+    expect(s.level).toBe(2);
+  });
+});
+
+describe("currículo", () => {
+  it("el inventario real es el del catálogo (no un número supuesto)", () => {
+    const audit = curriculumAudit(initialState(1, "r"));
+    expect(audit).toHaveLength(MICROS.length);
+    expect(new Set(audit.map((a) => a.id)).size).toBe(MICROS.length);
+    expect(MICROS.length).toBe(67);
+  });
+
+  it("el repaso aplazado por falta de sitio aparece en la ronda siguiente y no se pierde", () => {
+    const s = initialState(15, "r1");
+    // Nivel 1: 11 conceptos en 21 preguntas; el último (F11.1) no cabe con su repaso.
+    expect(s.round.slots.some((x) => x.micro === "F11.1" && x.kind === "review")).toBe(false);
+    passRound(s);
+    expect(s.pendingReviews).toContain("F11.1");
+    expect(s.round.slots.some((x) => x.micro === "F11.1" && x.kind === "review")).toBe(true);
+    passRound(s);
+    expect(s.pendingReviews).not.toContain("F11.1"); // al acertarlo, deja de estar pendiente
+  });
+
+  it("solo quedan pendientes los conceptos que de verdad se presentaron", () => {
+    const s = initialState(17, "r1");
+    reserveAll(s);
+    answerRight(s, 0); // A1 (F1.1)
+    reveal(s, s.round.id, 1, 10, fp("x"), true);
+    answer(s, { roundId: s.round.id, position: 1, choice: "B", nonce: "w" }, "A", 20); // falla B1 (F2.1)
+    expect(s.pendingReviews.sort()).toEqual(["F1.1", "F2.1"]);
+  });
+
+  it("lección vista ≠ respondida ≠ demostrada", () => {
+    expect(microStatus(undefined)).toBe("sin empezar");
+    expect(microStatus({ lessonShownAt: 1, answered: 0, correct: 0, roundsCorrect: [] })).toBe("lección vista");
+    expect(microStatus({ lessonShownAt: 1, answered: 2, correct: 2, roundsCorrect: ["r1"] })).toBe("respondida");
+    expect(microStatus({ lessonShownAt: 1, answered: 3, correct: 3, roundsCorrect: ["r1", "r2"] })).toBe("demostrada");
+  });
+});
+
+describe("puerta de velocidad", () => {
+  it("50/50 en dificultad avanzada SIN banda confirmada por la revisión no abre la velocidad", () => {
+    const s = initialState(16, "r1");
+    toAdvanced(s);
+    for (const x of s.round.slots) x.band = "medium";
+    const r = passRound(s);
+    expect(r.advance).toBe("level");
+    expect(s.timeStep).toBeNull();
+    expect(s.events.some((e) => e.type === "speed-gate-blocked")).toBe(true);
   });
 });

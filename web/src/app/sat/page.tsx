@@ -12,7 +12,10 @@ import Sheet from "@/components/Sheet";
 import { EXTREME_MINUTES } from "@/lib/sat/config";
 import { FAMILIES, FAMILY_BY_ID } from "@/lib/sat/curriculum";
 import type { OptionId, PublicItem } from "@/lib/sat/items";
-import type { SatView } from "@/lib/server/sat-service";
+import type { SatView as ServiceView } from "@/lib/server/sat-service";
+
+/** La vista del servicio + quién eres (invitado, dispositivos vinculados o cuenta). */
+type SatView = ServiceView & { identity?: { mode: "invitado" | "vinculado" | "cuenta"; devices: number } };
 
 type Feedback = { status: "correct"; explanation: string | null; roundComplete: boolean; advance?: "level" | "time" | "time-floor" };
 
@@ -38,6 +41,7 @@ export default function SatPage() {
   const [showMetrics, setShowMetrics] = useState(false);
   const [report, setReport] = useState<{ itemId: string; contest: boolean } | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [linking, setLinking] = useState(false);
   // El mismo "nonce" si hay que reintentar por un fallo de red: el servidor no lo cuenta dos veces.
   const nonce = useRef<string | null>(null);
 
@@ -56,8 +60,10 @@ export default function SatPage() {
     void load();
   }, [load]);
 
-  // Mientras se prepara algo, consultar de vez en cuando.
-  const waiting = view && !view.failure && !feedback && (!view.slide?.ready || (view.round.requiresFullReserve && !view.round.started));
+  // Mientras se prepara algo (o una revisión de un reporte sigue en curso), consultar de vez en cuando.
+  const reviewing = Boolean(view?.reports.some((x) => x.status === "pending"));
+  const waiting =
+    view && !feedback && (reviewing || (!view.failure && (!view.slide?.ready || (view.round.requiresFullReserve && !view.round.started))));
   useEffect(() => {
     if (!waiting) return;
     const t = setInterval(() => void load(), 3000);
@@ -206,10 +212,13 @@ export default function SatPage() {
     body = (
       <Center>
         <TocoritoFigure height={110} sipping />
-        <h2 className="mt-4 text-lg font-extrabold">Preparando tu {slide?.kind === "intro" ? "lección" : "pregunta"}…</h2>
+        <h2 className="mt-4 text-lg font-extrabold">{slide?.waitingFor === "lección" ? "Revisando tu lección…" : "Preparando tu pregunta…"}</h2>
         <p className="mt-2 max-w-sm text-sm text-slate-400">
-          Tocorito la escribe, otra revisión la resuelve sin ver la respuesta, y solo entonces te la da. Nunca repite una que ya viste.
+          {slide?.waitingFor === "lección"
+            ? "La explicación pasa comprobaciones automáticas y una revisión aparte antes de enseñártela."
+            : "Tocorito la escribe, otra revisión la resuelve sin ver la respuesta y estima su dificultad a ciegas; solo entonces te la da. Nunca repite una que ya viste."}
         </p>
+        <p className="mt-2 text-xs text-slate-500">El reloj no corre mientras esperas.</p>
       </Center>
     );
   } else if (!slide.revealed) {
@@ -244,6 +253,7 @@ export default function SatPage() {
         onSelect={setSelected}
         onConfirm={confirm}
         busy={busy}
+        reported={slide.reported}
         onReport={() => setReport({ itemId: slide.item!.id, contest: false })}
       />
     );
@@ -251,6 +261,23 @@ export default function SatPage() {
 
   return (
     <Frame onBack={() => router.push("/focus")} header={header}>
+      <IdentityBar identity={view.identity} onLink={() => setLinking(true)} />
+      {view.restoreOffer && (
+        <div className="mb-3 flex items-center gap-2 rounded-xl border border-emerald-400/40 bg-emerald-500/10 py-2 pl-3 pr-2 text-sm text-emerald-100" role="status">
+          <span className="flex-1">
+            Una pregunta defectuosa te reinició. Puedes recuperar tu ronda del nivel {view.restoreOffer.level} ({view.restoreOffer.position}/{view.restoreOffer.size}).
+          </span>
+          <button
+            onClick={async () => {
+              const d = await post({ action: "restore" });
+              if (d) setView(d as unknown as SatView);
+            }}
+            className="min-h-9 shrink-0 rounded-lg bg-emerald-600 px-3 font-bold text-white"
+          >
+            Recuperar
+          </button>
+        </div>
+      )}
       {view.notice && <p className="mb-3 rounded-xl border border-amber-400/40 bg-amber-400/10 px-3 py-2 text-sm text-amber-100">{view.notice}</p>}
       {error && <ErrorBox text={error} onRetry={() => (setError(null), load())} />}
       {message && (
@@ -265,16 +292,15 @@ export default function SatPage() {
           contest={report.contest}
           onClose={() => setReport(null)}
           onSend={async (reason) => {
+            // El reporte no pausa ni cambia la pregunta: se registra y la revisión va aparte.
             const d = await post({ action: "report", itemId: report.itemId, reason, contest: report.contest });
             setReport(null);
-            if (d) {
-              setMessage(d.message as string);
-              if (d.view) setView(d.view as SatView);
-              setSelected(null);
-            }
+            if (d) setMessage(d.message as string);
+            await load();
           }}
         />
       )}
+      {linking && <LinkSheet identity={view.identity} onClose={() => setLinking(false)} onLinked={() => (setLinking(false), load())} />}
     </Frame>
   );
 }
@@ -354,6 +380,7 @@ function QuestionView({
   onSelect,
   onConfirm,
   busy,
+  reported,
   onReport,
 }: {
   item: PublicItem;
@@ -362,6 +389,7 @@ function QuestionView({
   onSelect: (id: OptionId) => void;
   onConfirm: () => void;
   busy: boolean;
+  reported: string | null;
   onReport: () => void;
 }) {
   const fam = FAMILY_BY_ID.get(item.family);
@@ -371,6 +399,17 @@ function QuestionView({
         <Badge text={kind === "intro" ? "Pregunta del concepto" : "Repaso"} tone={kind === "intro" ? "blue" : "gray"} />
         <span className="truncate text-xs text-slate-500">{fam?.name}</span>
       </div>
+      {reported && (
+        <p className="mt-2 rounded-lg border border-white/15 bg-white/5 px-3 py-1.5 text-xs text-slate-300" role="status">
+          {reported === "pending"
+            ? "Reportada: la revisión va aparte. El reloj sigue y hay que responderla igual."
+            : reported === "valid"
+              ? "La revisión confirmó que esta pregunta es correcta."
+              : reported === "error"
+                ? "No se pudo revisar ahora (problema técnico). Puedes reportarla otra vez."
+                : "Revisada."}
+        </p>
+      )}
       <div className="mt-3 rounded-2xl border border-white/15 px-4 py-3 text-[15px] leading-relaxed" lang="en">
         {item.passage2 && <p className="mb-1 text-xs font-bold uppercase text-slate-400">Text 1</p>}
         <p className="whitespace-pre-wrap break-words">{item.passage}</p>
@@ -501,11 +540,18 @@ function FailureScreen({ view, busy, onAck, onContest }: { view: SatView; busy: 
           </div>
         </div>
       )}
+      {f.report && (
+        <p className="mt-3 rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-slate-200" role="status">
+          {f.report.status === "pending"
+            ? "Revisión en curso (independiente de lo que escribiste). El reinicio sigue en pie hasta que termine."
+            : f.report.detail ?? "Revisada."}
+        </p>
+      )}
       <div className="mt-auto flex flex-col gap-2 pt-5">
         <button onClick={onAck} disabled={busy} className="min-h-12 w-full rounded-xl bg-[#1450d8] text-[15px] font-bold">
           Empezar de nuevo
         </button>
-        {it && (
+        {it && !f.report && (
           <button onClick={onContest} disabled={busy} className="min-h-11 text-sm text-slate-400 active:text-white">
             Creo que la pregunta está mal (revisarla)
           </button>
@@ -579,10 +625,194 @@ function MetricsSheet({ view, onClose }: { view: SatView; onClose: () => void })
           </ul>
         </>
       )}
+      <CurriculumSection view={view} />
+      <GenerationSection view={view} />
+      <details className="mt-4 rounded-xl border border-white/10 px-3 py-2 text-xs">
+        <summary className="cursor-pointer text-sm font-bold">Referencias oficiales de dificultad</summary>
+        <p className="mt-2 text-slate-400">
+          Cada pregunta nueva se compara a ciegas con las 15 muestras oficiales del marco del Digital SAT (rasgos por habilidad). Esas muestras no
+          tienen etiqueta de dificultad; las etiquetas oficiales (easy/medium/hard) solo están en el Student Question Bank, que requiere iniciar sesión
+          en College Board. Por eso estas celdas quedan sin referencia:
+        </p>
+        <ul className="mt-1 text-slate-300">
+          {view.references.map((r) => (
+            <li key={r.family}>
+              {r.family}. {FAMILY_BY_ID.get(r.family)?.name}: {r.skillRefs} muestra(s) de habilidad; easy/medium/hard sin referencia.
+            </li>
+          ))}
+        </ul>
+      </details>
       <p className="mb-2 mt-4 text-xs text-slate-500">
         Volver al nivel 1 no borra lo aprendido. Estas métricas no predicen tu puntuación del SAT; las rondas de 50 de Tocorito no son simulacros oficiales
         (el SAT real tiene 54 preguntas en 64 min).
       </p>
+    </Sheet>
+  );
+}
+
+/** Los microobjetivos REALES del temario: lección vista ≠ respondida ≠ demostrada. */
+function CurriculumSection({ view }: { view: SatView }) {
+  const audit = view.metrics.audit;
+  const count = (s: string) => audit.filter((a) => a.status === s).length;
+  return (
+    <details className="mt-4 rounded-xl border border-white/10 px-3 py-2 text-xs">
+      <summary className="cursor-pointer text-sm font-bold">Temario: {audit.length} microobjetivos</summary>
+      <p className="mt-2 text-slate-300">
+        Demostrados {count("demostrada")} · respondidos {count("respondida")} · solo lección vista {count("lección vista")} · sin empezar {count("sin empezar")}
+        {view.metrics.pendingReviews.length ? ` · repasos pendientes: ${view.metrics.pendingReviews.join(", ")}` : ""}
+      </p>
+      <p className="mt-1 text-slate-500">«Demostrado»: aciertos en al menos 2 rondas distintas y ≥ 80 % de acierto.</p>
+      <ul className="mt-2 max-h-56 overflow-y-auto pr-1">
+        {audit.map((a) => (
+          <li key={a.id} className="flex justify-between gap-2 border-b border-white/5 py-0.5">
+            <span className="truncate text-slate-300">
+              {a.id} {a.title}
+            </span>
+            <span className={`shrink-0 ${a.status === "demostrada" ? "text-emerald-300" : a.status === "sin empezar" ? "text-slate-600" : "text-slate-300"}`}>{a.status}</span>
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
+/** Lo que cuesta preparar las preguntas: llamadas, tokens, rechazos (y por qué), esperas reales. */
+function GenerationSection({ view }: { view: SatView }) {
+  const g = view.generation;
+  const t = g.today;
+  const sec = (ms: number | null) => (ms === null ? "—" : `${(ms / 1000).toFixed(1)} s`);
+  return (
+    <details className="mt-4 rounded-xl border border-white/10 px-3 py-2 text-xs">
+      <summary className="cursor-pointer text-sm font-bold">Preparación y presupuesto (hoy)</summary>
+      <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-slate-300">
+        <span>Llamadas de IA</span>
+        <span className="tabular-nums">
+          {g.budget.used} / {g.budget.dailyCalls}
+        </span>
+        <span>Tokens (entrada / salida)</span>
+        <span className="tabular-nums">
+          {t.inputTokens} / {t.outputTokens}
+        </span>
+        <span>Generadas</span>
+        <span className="tabular-nums">{t.generated}</span>
+        <span>Aceptadas tras revisión</span>
+        <span className="tabular-nums">{t.accepted}</span>
+        <span>Rechazadas</span>
+        <span className="tabular-nums">{t.rejectedTotal}</span>
+        <span>Validadas disponibles</span>
+        <span className="tabular-nums">
+          {g.available} + {g.reserved} reservadas
+        </span>
+        <span>Nuevas mostradas</span>
+        <span className="tabular-nums">{t.shown}</span>
+        <span>Tiempo medio por llamada</span>
+        <span className="tabular-nums">{sec(t.avgCallMs)}</span>
+        <span>Esperas del estudiante</span>
+        <span className="tabular-nums">
+          {g.waits.count} · media {sec(g.waits.avgMs)} · máx {sec(g.waits.maxMs)}
+        </span>
+        <span>Coste</span>
+        <span>{g.cost.usd !== null ? `$${g.cost.usd.toFixed(3)}` : "no calculable"}</span>
+      </div>
+      {g.cost.note && <p className="mt-1 text-slate-500">{g.cost.note}</p>}
+      {t.rejectedReasons.length > 0 && (
+        <>
+          <p className="mt-2 font-bold text-slate-200">Motivos de rechazo</p>
+          <ul className="text-slate-400">
+            {t.rejectedReasons.map(([reason, n]) => (
+              <li key={reason}>
+                {n} × {reason}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+      <p className="mt-2 font-bold text-slate-200">Aceptación por familia</p>
+      <ul className="text-slate-400">
+        {t.byFamily
+          .filter((f) => f.generated)
+          .map((f) => (
+            <li key={f.id}>
+              {f.id}. {FAMILY_BY_ID.get(f.id)?.name}: {f.accepted}/{f.generated} ({Math.round((f.accepted / f.generated) * 100)}%)
+            </li>
+          ))}
+      </ul>
+    </details>
+  );
+}
+
+/** Invitado: el historial vive en este dispositivo hasta vincularlo. No se promete sincronizar sin vincular. */
+function IdentityBar({ identity, onLink }: { identity: SatView["identity"]; onLink: () => void }) {
+  if (!identity || identity.mode === "cuenta") return null;
+  return (
+    <div className="mb-3 flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] py-1.5 pl-3 pr-1.5 text-xs text-slate-300">
+      <span className="flex-1">
+        {identity.mode === "invitado"
+          ? "Modo invitado: tu historial vive solo en este dispositivo."
+          : `Historial compartido entre ${identity.devices} dispositivo${identity.devices === 1 ? "" : "s"} vinculados.`}
+      </span>
+      <button onClick={onLink} className="min-h-9 shrink-0 rounded-lg border border-white/15 px-2.5 font-semibold text-slate-100 active:bg-white/10">
+        Vincular dispositivo
+      </button>
+    </div>
+  );
+}
+
+function LinkSheet({ identity, onClose, onLinked }: { identity: SatView["identity"]; onClose: () => void; onLinked: () => void }) {
+  const [code, setCode] = useState<{ code: string; expiresAt: number } | null>(null);
+  const [input, setInput] = useState("");
+  const [msg, setMsg] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  async function create() {
+    setBusy(true);
+    const r = await api({ action: "link-create" });
+    setBusy(false);
+    if (r.ok) setCode(r.data as { code: string; expiresAt: number });
+    else setMsg((r.data.error as string) ?? "No pude crear el código.");
+  }
+  async function redeem() {
+    setBusy(true);
+    const r = await api({ action: "link-redeem", code: input });
+    setBusy(false);
+    if (r.ok) onLinked();
+    else setMsg((r.data.error as string) ?? "No pude vincular.");
+  }
+  return (
+    <Sheet title="Vincular dispositivo" onClose={onClose} dark>
+      <p className="text-sm text-slate-400">
+        Así tu historial (preguntas vistas, nivel, métricas) es el mismo en la computadora y en el teléfono. Sin correo ni contraseñas.
+      </p>
+      <div className="mt-4 rounded-xl border border-white/10 p-3">
+        <p className="text-sm font-bold">En este dispositivo</p>
+        {code ? (
+          <>
+            <p className="mt-2 text-center font-mono text-2xl tracking-widest">{code.code}</p>
+            <p className="mt-1 text-center text-xs text-slate-500">Escríbelo en el otro dispositivo. Caduca en 10 minutos y sirve una vez.</p>
+          </>
+        ) : (
+          <button onClick={create} disabled={busy} className="mt-2 min-h-11 w-full rounded-xl bg-[#1450d8] text-sm font-bold">
+            Generar código
+          </button>
+        )}
+      </div>
+      {identity?.mode === "invitado" && (
+        <div className="mb-2 mt-3 rounded-xl border border-white/10 p-3">
+          <p className="text-sm font-bold">Tengo un código de otro dispositivo</p>
+          <input
+            value={input}
+            onChange={(e) => setInput(e.target.value.toUpperCase())}
+            placeholder="ABCD-EFGH"
+            maxLength={12}
+            aria-label="Código de vinculación"
+            className="mt-2 min-h-11 w-full rounded-xl border border-white/15 bg-[#161618] px-3 text-center font-mono text-lg tracking-widest text-white outline-none focus:border-[#1450d8]"
+          />
+          <button onClick={redeem} disabled={busy || input.length < 8} className="mt-2 min-h-11 w-full rounded-xl border border-white/15 text-sm font-bold disabled:opacity-50">
+            Vincular este dispositivo
+          </button>
+          <p className="mt-1 text-xs text-slate-500">Lo que hiciste aquí como invitado se une a ese historial (sin perder preguntas vistas).</p>
+        </div>
+      )}
+      {msg && <p className="mb-2 text-sm text-amber-200">{msg}</p>}
     </Sheet>
   );
 }
@@ -593,8 +823,8 @@ function ReportSheet({ contest, onClose, onSend }: { contest: boolean; onClose: 
     <Sheet title={contest ? "Revisar la pregunta" : "Reportar pregunta"} onClose={onClose} dark>
       <p className="text-sm text-slate-400">
         {contest
-          ? "Una revisión independiente la vuelve a resolver. Si era defectuosa, se deshace el reinicio."
-          : "Se retira y te pongo otra en su lugar. No cuenta como error."}
+          ? "Una revisión independiente vuelve a resolver la pregunta (no lee lo que escribas: solo la pregunta y su clave). Si era defectuosa, se anula el reinicio; si era válida, se mantiene."
+          : "Queda registrada y una revisión independiente la mira aparte. El reloj NO se para y hay que responderla igual; si era defectuosa, se anula lo que haya causado."}
       </p>
       <textarea
         value={reason}

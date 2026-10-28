@@ -33,11 +33,29 @@ export const MIN_GLOBAL_MS = 60_000;
 /** Preguntas preparadas por adelantado en la ronda actual, y para un reinicio. */
 export const LOOKAHEAD = 6;
 export const RESET_RESERVE = 4;
-/** Límites de coste: generación por usuario y día, y trabajos a la vez. */
-export const MAX_ITEMS_PER_DAY = 400;
+/** Trabajos de generación a la vez por estudiante, y preguntas por llamada de generación. */
 export const MAX_CONCURRENT_JOBS = 2;
-/** Preguntas por llamada de generación. */
 export const BATCH_SIZE = 3;
+
+/**
+ * Presupuesto EXPLÍCITO de IA (se cuentan LLAMADAS: generar, revisar, lecciones, impugnaciones), por día.
+ * Por defecto da para sesiones largas: cada pregunta lista cuesta ~0,7 llamadas (1 de generación + 1 de revisión
+ * por lote de 3), así que 1500 llamadas/día ≈ 2000 preguntas validadas si el rechazo es bajo.
+ * - SAT_DAILY_CALLS: por estudiante (por defecto 1500).
+ * - SAT_GLOBAL_DAILY_CALLS: tope de todo el servidor (por defecto sin tope).
+ * - SAT_PRICE_IN_PER_MTOK / SAT_PRICE_OUT_PER_MTOK: precio por millón de tokens para calcular el coste
+ *   (si faltan, el coste no se puede calcular y se dice así).
+ * Al agotarse: aviso y espera (sin cronómetro ni fallo). Nunca se recarga ni se compra nada automáticamente.
+ */
+export function budget() {
+  const num = (v: string | undefined) => (v && Number.isFinite(Number(v)) && Number(v) >= 0 ? Number(v) : null);
+  return {
+    dailyCalls: num(process.env.SAT_DAILY_CALLS) ?? 1500,
+    globalDailyCalls: num(process.env.SAT_GLOBAL_DAILY_CALLS),
+    priceInPerMTok: num(process.env.SAT_PRICE_IN_PER_MTOK),
+    priceOutPerMTok: num(process.env.SAT_PRICE_OUT_PER_MTOK),
+  };
+}
 
 export function levelInfo(level: number): { size: number; difficulty: number } {
   return LEVEL_TABLE[Math.min(level, LEVEL_TABLE.length) - 1];

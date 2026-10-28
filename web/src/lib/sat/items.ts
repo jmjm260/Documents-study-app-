@@ -17,7 +17,12 @@ export type SatChart = {
   note?: string;
 };
 
-export type Fingerprint = { passage: string; stem: string; options: string; skeleton: string; minhash: number[] };
+/**
+ * Huella de una pregunta (se guarda para siempre en el historial de vistas).
+ * `concepts`: raíces de las palabras de contenido del pasaje (sin nombres propios ni cifras), para paráfrasis.
+ * Las huellas antiguas pueden no tenerlo.
+ */
+export type Fingerprint = { passage: string; stem: string; options: string; skeleton: string; minhash: number[]; concepts?: string[]; key?: string };
 
 export type SatItem = {
   id: string;
@@ -43,8 +48,13 @@ export type SatItem = {
   verification: string;
   chart?: SatChart;
   fp: Fingerprint;
-  status: "validated" | "reported" | "rejected";
+  status: "validated" | "reported" | "rejected" | "defective";
   createdAt: number;
+  /**
+   * Revisión CIEGA de dificultad (el revisor no conoce el nivel pretendido): banda estimada frente a las
+   * referencias oficiales, puntuación por dimensión (1–3), razones y si coincide con lo pretendido.
+   */
+  assessment?: { band: string; dims: Record<string, number>; reasons: string; expected: string; agree: boolean; stdWords: number };
 };
 
 /** Lo que recibe el navegador para responder: SIN clave ni explicaciones. */
@@ -110,34 +120,81 @@ export function similarity(a: number[], b: number[]): number {
   return a.filter((v, i) => v === b[i]).length / a.length;
 }
 
-export function fingerprint(item: Pick<SatItem, "passage" | "passage2" | "question" | "options">): Fingerprint {
+const STOPWORDS = new Set(
+  "the a an and or but of to in on at for with from by as is are was were be been being has have had do does did this that these those it its they them their there which who whom whose what when where while than then also not no nor so such into onto over under about after before during because since although though however some most many more much very can could would should will may might must one two three nname nnum".split(
+    " "
+  )
+);
+
+/** Raíz aproximada (sin diccionario): quita terminaciones comunes del inglés. */
+function stem(word: string): string {
+  return word.replace(/(ations?|ments?|ingly|ing|edly|ed|ies|es|s|ly|er|est)$/, "").slice(0, 8);
+}
+
+/** Palabras de contenido (raíces) de un texto, sin nombres propios, cifras ni palabras vacías. */
+export function concepts(text: string): string[] {
+  const words = skeleton(text).split(" ").filter((w) => w.length >= 4 && !STOPWORDS.has(w));
+  return [...new Set(words.map(stem))].sort().slice(0, 80);
+}
+
+function jaccard(a: string[], b: string[]): number {
+  if (!a.length || !b.length) return 0;
+  const sb = new Set(b);
+  const inter = a.filter((x) => sb.has(x)).length;
+  return inter / (a.length + b.length - inter);
+}
+
+/**
+ * "Palabras estandarizadas" como en el marco oficial del Digital SAT: caracteres (letras, números,
+ * espacios y signos) ÷ 6. Los pasajes oficiales miden 25–150.
+ */
+export function standardWords(...texts: (string | undefined)[]): number {
+  return Math.round(texts.filter(Boolean).join(" ").length / 6);
+}
+
+export function fingerprint(item: Pick<SatItem, "passage" | "passage2" | "question" | "options"> & { correct?: OptionId }): Fingerprint {
   const body = `${item.passage} ${item.passage2 ?? ""}`;
   const opts = item.options.map((o) => normalize(o.text)).sort().join("|");
+  const key = item.correct ? item.options.find((o) => o.id === item.correct)?.text : undefined;
   return {
     passage: hash(normalize(body)),
     stem: hash(`${normalize(item.question)}|${opts}`),
     options: hash(opts),
     skeleton: hash(`${skeleton(body)}|${item.options.map((o) => skeleton(o.text)).sort().join("|")}`),
-    minhash: minhash(`${body} ${item.question}`),
+    // Solo el pasaje: los enunciados estándar del SAT son largos e iguales y inflarían la similitud.
+    minhash: minhash(body),
+    concepts: concepts(body),
+    ...(key ? { key: hash(skeleton(key)) } : {}),
   };
 }
 
 /** Umbral de similitud a partir del cual se considera la "misma" pregunta con cambios superficiales. */
 export const SIMILARITY_THRESHOLD = 0.55;
+/** Paráfrasis: mismas ideas de contenido (raíces) aunque cambie la redacción. */
+export const PARAPHRASE_THRESHOLD = 0.5;
 
 /**
- * ¿Es igual o una variante superficial de algo ya visto/reservado? Compara texto normalizado, esqueleto
- * (nombres y cifras), opciones en cualquier orden y similitud aproximada. No es perfecta: reduce, no elimina.
+ * ¿Es igual o una variante de algo ya visto/reservado? Combina:
+ * - textual: mismo pasaje normalizado;
+ * - estructural: mismo esqueleto (nombres → nname, cifras → nnum) con las opciones en cualquier orden;
+ * - aproximada: MinHash de trigramas (cambios cosméticos) y Jaccard de raíces de contenido (paráfrasis).
+ * El mismo enunciado estándar y las mismas opciones (p. ej. is/are/was/were) NO bastan: muchas preguntas
+ * legítimamente nuevas de la misma regla los comparten; hace falta además que el pasaje se parezca.
+ * Es probabilística: reduce repeticiones, no las garantiza al 100 %.
  */
 export function isDuplicate(fp: Fingerprint, others: Fingerprint[]): boolean {
-  return others.some(
-    (o) =>
-      o.passage === fp.passage ||
-      o.stem === fp.stem ||
-      o.skeleton === fp.skeleton ||
-      (o.options === fp.options && similarity(o.minhash, fp.minhash) >= 0.3) ||
-      similarity(o.minhash, fp.minhash) >= SIMILARITY_THRESHOLD
-  );
+  return others.some((o) => {
+    if (o.passage === fp.passage || o.skeleton === fp.skeleton) return true;
+    const near = similarity(o.minhash, fp.minhash);
+    if (near >= SIMILARITY_THRESHOLD) return true;
+    if ((o.stem === fp.stem || o.options === fp.options) && near >= 0.3) return true;
+    // Paráfrasis: mismo contenido con otras palabras, y (si se sabe) la misma respuesta en esqueleto.
+    if (o.concepts && fp.concepts) {
+      const j = jaccard(o.concepts, fp.concepts);
+      if (j >= 0.75 || (j >= PARAPHRASE_THRESHOLD && (!o.key || !fp.key || o.key === fp.key))) return true;
+    }
+    return false;
+  });
 }
 
 // ---------- Validación determinista ----------

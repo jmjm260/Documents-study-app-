@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fingerprint, isDuplicate, leaksAnswer, publicItem, skeleton, validateItem, type SatItem } from "./items";
+import { fingerprint, isDuplicate, leaksAnswer, publicItem, skeleton, standardWords, validateItem, type SatItem } from "./items";
 
 const RAW = {
   family: 2,
@@ -18,7 +18,7 @@ const EXPECTED = { family: 2, micro: "F2.1", difficulty: 1 };
 function item(raw: Record<string, unknown> = RAW): SatItem {
   const r = validateItem(raw, EXPECTED);
   if ("error" in r) throw new Error(r.error);
-  return { ...r.item, id: "x", version: 1, fp: fingerprint(r.item), status: "validated", createdAt: 0 };
+  return { ...r.item, id: "x", version: 1, fp: fingerprint(r.item), status: "validated", createdAt: 0 } as SatItem;
 }
 
 describe("validateItem", () => {
@@ -60,6 +60,24 @@ describe("duplicados", () => {
     const a = item({ ...RAW, passage: "In 1998, the team led by Maria Lopez published a study that ______ how bees navigate." });
     const b = item({ ...RAW, passage: "In 2004, the team led by Ana Ruiz published a study that ______ how bees navigate." });
     expect(isDuplicate(b.fp, [a.fp])).toBe(true);
+  });
+
+  it("detecta una paráfrasis del mismo ejercicio", () => {
+    const a = item({ ...RAW, passage: "The collection of rare maps, which the museum acquired last year, ______ now on display in the east wing of the building." });
+    const b = item({ ...RAW, passage: "Acquired by the museum last year, the collection of rare maps ______ currently on display in the building's east wing." });
+    expect(isDuplicate(b.fp, [a.fp])).toBe(true);
+  });
+
+  it("no rechaza otra pregunta de la misma regla con el mismo enunciado y opciones (is/are/…)", () => {
+    const a = item();
+    const b = item({ ...RAW, passage: "The team of volunteers that cleaned the riverbank last weekend ______ planning another event for the spring." });
+    expect(a.fp.options).toBe(b.fp.options); // mismas opciones y mismo enunciado estándar
+    expect(isDuplicate(b.fp, [a.fp])).toBe(false);
+  });
+
+  it("palabras estandarizadas como el marco oficial (caracteres ÷ 6)", () => {
+    expect(standardWords("x".repeat(600))).toBe(100);
+    expect(standardWords("abc", "def")).toBe(1);
   });
 
   it("no confunde preguntas distintas de la misma habilidad", () => {

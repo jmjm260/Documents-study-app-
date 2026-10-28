@@ -71,12 +71,27 @@ function pickWeighted(pool: string[], stats: MicroStats, rand: () => number, avo
   return options[options.length - 1];
 }
 
-export function planRound(opts: { level: number; size: number; stats: MicroStats; seed: number }): PlannedSlot[] {
+/**
+ * `mustReview`: microobjetivos ya enseñados cuyo repaso quedó aplazado (por falta de sitio en una ronda
+ * anterior). Entran en esta ronda antes que el resto de repasos, para que no se pierdan.
+ */
+export function planRound(opts: { level: number; size: number; stats: MicroStats; seed: number; mustReview?: string[] }): PlannedSlot[] {
   const rand = rng(opts.seed);
   const intros = introsForLevel(opts.level);
   const taught = [...taughtBefore(opts.level), ...intros];
+  const pending = (opts.mustReview ?? []).filter((m) => taughtBefore(opts.level).includes(m));
 
-  if (!intros.length) return evaluationRound(Math.min(opts.size, MAX_ROUND), taught, opts.stats, rand);
+  if (!intros.length) {
+    const evalSlots = evaluationRound(Math.min(opts.size, MAX_ROUND), taught, opts.stats, rand);
+    // Los aplazados sustituyen a un repaso de su misma familia (así el reparto por familias no cambia).
+    for (const m of pending) {
+      if (evalSlots.some((s) => s.micro === m)) continue;
+      const fam = MICRO_BY_ID.get(m)!.family;
+      const i = evalSlots.findIndex((s) => s.family === fam && evalSlots.filter((x) => x.micro === s.micro).length > 1);
+      if (i >= 0) evalSlots[i] = slot("review", m);
+    }
+    return evalSlots;
+  }
 
   // 1) Cadena de aprendizaje: A1, B1, A2, C1, B2, D1, C2… (cada concepto nuevo se repasa tras el siguiente).
   const chain: PlannedSlot[] = [];
@@ -94,9 +109,11 @@ export function planRound(opts: { level: number; size: number; stats: MicroStats
   // Repaso del último concepto nuevo si cabe en el tamaño propuesto (si no, se repasa en la ronda siguiente).
   if (chain.length + missing.length < opts.size) chain.push(slot("review", intros[intros.length - 1]));
 
+  // Repasos aplazados de rondas anteriores (que no estén ya en la cadena).
+  const deferred = pending.filter((m) => !chain.some((s) => s.micro === m) && !missing.some((s) => s.micro === m)).map((m) => slot("review", m));
   // El planificador puede ampliar la ronda si necesita sitio, sin pasar de 50.
-  const size = Math.min(MAX_ROUND, Math.max(opts.size, chain.length + missing.length));
-  const extra: PlannedSlot[] = [...missing];
+  const size = Math.min(MAX_ROUND, Math.max(opts.size, chain.length + missing.length + deferred.length));
+  const extra: PlannedSlot[] = [...missing, ...deferred];
 
   // 3) Repaso acumulativo hasta completar: todo lo enseñado, más peso a lo que costó, familias equilibradas.
   const familyCount = new Map<number, number>();
